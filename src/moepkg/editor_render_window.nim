@@ -21,8 +21,6 @@
 
 import std/[options, strutils, unicode, tables]
 
-import pkg/celina
-
 import
   types/editor_types,
   editor_window_layout,
@@ -41,7 +39,8 @@ import
   editor_codelens,
   virtual_text,
   command_line,
-  buffer
+  buffer,
+  render_target
 import command_handlers/visual_handler
 
 type
@@ -224,7 +223,9 @@ template matchesCurrentWord(
 ): bool =
   not e.state.isSearchOverlay and lineCtx.wordRanges.isColumnInRanges(pos.column)
 
-template matchesSearchHighlight(lineCtx: LineStyleContext, pos: RenderTargetPosition): bool =
+template matchesSearchHighlight(
+    lineCtx: LineStyleContext, pos: RenderTargetPosition
+): bool =
   lineCtx.searchRanges.isColumnInRanges(pos.column)
 
 template gitConflictApplies(lineCtx: LineStyleContext): bool =

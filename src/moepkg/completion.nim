@@ -27,11 +27,11 @@ import
   std/
     [algorithm, sequtils, strutils, unicode, sets, options, json, os, monotimes, times]
 
-import pkg/[celina, jsony]
+import pkg/jsony
 
 import
   buffer, word_dictionary, command_completion, fuzzy_match, color, popup_render,
-  unicode_utils
+  unicode_utils, render_target
 import syntax/tokenizer
 import lsp/protocol/types as lspTypes
 
@@ -302,7 +302,9 @@ proc collectWordSet(
         result.incl(word)
 
 proc collectBufferWords*(
-    buffer: TextBuffer, excludePos: RenderTargetPosition, otherBuffers: seq[TextBuffer] = @[]
+    buffer: TextBuffer,
+    excludePos: RenderTargetPosition,
+    otherBuffers: seq[TextBuffer] = @[],
 ): seq[string] =
   ## Collect all unique words from the current buffer and other open buffers.
   ## Excludes the word at the current cursor position. Order is unspecified;
@@ -1150,7 +1152,9 @@ proc calculateDocPanelPosition*(
 
   PopupPosition(x: x, y: y, width: popupWidth, height: popupHeight)
 
-proc renderDocPanel*(termBuffer: var RenderTarget, docPanel: DocPanel, pos: PopupPosition) =
+proc renderDocPanel*(
+    termBuffer: var RenderTarget, docPanel: DocPanel, pos: PopupPosition
+) =
   ## Render documentation panel to terminal buffer
   if not docPanel.visible or docPanel.lines.len == 0:
     return

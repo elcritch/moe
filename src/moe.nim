@@ -25,6 +25,7 @@ import
   moepkg/[
     editor, editor_window_layout, editor_window_state, handler, modes, logger, cmdline,
     filer, lsp_integration, config, config_loader, emergency, status_line, key_router,
+    celina_render_target,
   ]
 import moepkg/command_handlers/command_mode_handler
 
@@ -215,7 +216,8 @@ proc runEditor(
         # Poll terminal output for all windows in Terminal mode
         editor.pollTerminalWindows()
 
-        editor.render(buffer)
+        var renderTarget = initCelinaRenderTarget(buffer)
+        editor.render(renderTarget)
         editor.applyFrontendRequests(app)
 
         if not editor.config.standard.disableChangeCursor:

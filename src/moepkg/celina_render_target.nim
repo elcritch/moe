@@ -23,59 +23,59 @@ import pkg/celina as celina
 
 import std/unicode
 
-import render_target
+import render_target as rt
 
-func toRenderRect*(area: celina.Rect): RenderRect {.inline.} =
-  RenderRect(x: area.x, y: area.y, width: area.width, height: area.height)
+func toRenderRect*(area: celina.Rect): rt.RenderRect {.inline.} =
+  rt.RenderRect(x: area.x, y: area.y, width: area.width, height: area.height)
 
-func toCelinaRect*(area: RenderRect): celina.Rect {.inline.} =
+func toCelinaRect*(area: rt.RenderRect): celina.Rect {.inline.} =
   celina.Rect(x: area.x, y: area.y, width: area.width, height: area.height)
 
-func toCelinaColorValue*(color: ColorValue): celina.ColorValue =
+func toCelinaColorValue*(color: rt.ColorValue): celina.ColorValue =
   case color.kind
-  of cvkDefault:
+  of rt.cvkDefault:
     celina.ColorValue(kind: celina.Default)
-  of cvkIndexed256:
+  of rt.cvkIndexed256:
     celina.ColorValue(kind: celina.Indexed256, indexed256: color.indexed256)
-  of cvkRgb:
+  of rt.cvkRgb:
     celina.ColorValue(
       kind: celina.Rgb,
       rgb: celina.RgbColor(r: color.rgb.r, g: color.rgb.g, b: color.rgb.b),
     )
 
-func toCelinaModifiers(modifiers: set[StyleModifier]): set[celina.StyleModifier] =
+func toCelinaModifiers(modifiers: set[rt.StyleModifier]): set[celina.StyleModifier] =
   for modifier in modifiers:
     case modifier
-    of StyleModifier.Bold:
+    of rt.StyleModifier.Bold:
       result.incl(celina.StyleModifier.Bold)
-    of StyleModifier.Dim:
+    of rt.StyleModifier.Dim:
       result.incl(celina.StyleModifier.Dim)
-    of StyleModifier.Italic:
+    of rt.StyleModifier.Italic:
       result.incl(celina.StyleModifier.Italic)
-    of StyleModifier.Underline:
+    of rt.StyleModifier.Underline:
       result.incl(celina.StyleModifier.Underline)
-    of StyleModifier.SlowBlink:
+    of rt.StyleModifier.SlowBlink:
       result.incl(celina.StyleModifier.SlowBlink)
-    of StyleModifier.RapidBlink:
+    of rt.StyleModifier.RapidBlink:
       result.incl(celina.StyleModifier.RapidBlink)
-    of StyleModifier.Reversed:
+    of rt.StyleModifier.Reversed:
       result.incl(celina.StyleModifier.Reversed)
-    of StyleModifier.Crossed:
+    of rt.StyleModifier.Crossed:
       result.incl(celina.StyleModifier.Crossed)
-    of StyleModifier.Hidden:
+    of rt.StyleModifier.Hidden:
       result.incl(celina.StyleModifier.Hidden)
-    of StyleModifier.Undercurl:
+    of rt.StyleModifier.Undercurl:
       result.incl(celina.StyleModifier.Undercurl)
-    of StyleModifier.DoubleUnderline:
+    of rt.StyleModifier.DoubleUnderline:
       result.incl(celina.StyleModifier.DoubleUnderline)
-    of StyleModifier.DottedUnderline:
+    of rt.StyleModifier.DottedUnderline:
       result.incl(celina.StyleModifier.DottedUnderline)
-    of StyleModifier.DashedUnderline:
+    of rt.StyleModifier.DashedUnderline:
       result.incl(celina.StyleModifier.DashedUnderline)
-    of StyleModifier.Overline:
+    of rt.StyleModifier.Overline:
       result.incl(celina.StyleModifier.Overline)
 
-func toCelinaStyle*(style: Style): celina.Style =
+func toCelinaStyle*(style: rt.Style): celina.Style =
   celina.Style(
     fg: style.fg.toCelinaColorValue,
     bg: style.bg.toCelinaColorValue,
@@ -83,12 +83,12 @@ func toCelinaStyle*(style: Style): celina.Style =
   )
 
 proc setCelinaCell(
-    context: pointer, x, y: int, symbol: string, width: int, style: Style
+    context: pointer, x, y: int, symbol: string, width: int, style: rt.Style
 ) =
   let buffer = cast[ptr celina.Buffer](context)
   buffer[].setCell(x, y, symbol, width, style.toCelinaStyle)
 
-proc setCelinaString(context: pointer, x, y: int, text: string, style: Style) =
+proc setCelinaString(context: pointer, x, y: int, text: string, style: rt.Style) =
   let buffer = cast[ptr celina.Buffer](context)
   buffer[].setString(x, y, text, style.toCelinaStyle)
 
@@ -96,8 +96,8 @@ proc foldCelinaZeroWidthRune(context: pointer, x, y: int, rune: Rune) =
   let buffer = cast[ptr celina.Buffer](context)
   buffer[].foldZeroWidthRune(x, y, rune)
 
-proc initCelinaRenderTarget*(buffer: var celina.Buffer): RenderTarget =
-  initRenderTarget(
+proc initCelinaRenderTarget*(buffer: var celina.Buffer): rt.RenderTarget =
+  rt.initRenderTarget(
     buffer.area.toRenderRect, buffer.addr, setCelinaCell, setCelinaString,
     foldCelinaZeroWidthRune,
   )

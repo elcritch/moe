@@ -140,8 +140,7 @@ const
     ## `length`, so a pathological value (e.g. 2^31 from a buggy server) would
     ## otherwise walk every row of the buffer in a full-doc reply.
 
-let defaultStyle* = render_types.defaultStyle()
-  ## Default style for highlighting
+let defaultStyle* = render_types.defaultStyle() ## Default style for highlighting
 
 proc captureTokenizerState*(g: GeneralTokenizer): TokenizerState =
   ## Capture tokenizer state at a line boundary.

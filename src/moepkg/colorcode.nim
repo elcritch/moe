@@ -24,6 +24,8 @@
 
 import std/[options, hashes, unicode]
 
+import pkg/results
+
 import render_types, color
 
 type

@@ -25,9 +25,7 @@
 
 import std/[strutils, unicode, monotimes, times]
 
-import pkg/celina
-
-import color, unicode_utils
+import color, unicode_utils, render_target
 
 type
   NotificationLevel* = enum

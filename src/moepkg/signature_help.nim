@@ -25,9 +25,7 @@
 
 import std/[options, unicode, json]
 
-import pkg/celina
-
-import lsp_integration, unicode_utils, color
+import lsp_integration, unicode_utils, color, render_target
 import lsp/protocol/types as lspTypes
 
 type

@@ -24,9 +24,8 @@
 ## improve modularity and prepare for additional rendering features.
 
 import std/unicode
-import pkg/celina
 
-import types, buffer, unicode_utils, color, modes, sidebar
+import types, buffer, unicode_utils, color, modes, sidebar, render_target
 
 # Rendering constants
 const

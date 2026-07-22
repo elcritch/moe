@@ -22,6 +22,7 @@ import std/[unittest, os, strutils, times, options, unicode]
 import pkg/[results, celina]
 
 import ../src/moepkg/[buffer, highlight, unicode_utils]
+import ../src/moepkg/render_target as rt
 
 suite "Buffer - Trailing Empty Lines":
   test "Insert text with trailing empty lines preserves them":
@@ -1744,8 +1745,8 @@ suite "Buffer - Diagnostic Highlights":
     buf.updateHighlight()
 
     # The diagnostic range should have Underline modifier
-    check buf.highlight.getSegmentModifiers(0, 0) == {StyleModifier.Undercurl}
-    check buf.highlight.getSegmentModifiers(0, 3) == {StyleModifier.Undercurl}
+    check buf.highlight.getSegmentModifiers(0, 0) == {rt.StyleModifier.Undercurl}
+    check buf.highlight.getSegmentModifiers(0, 3) == {rt.StyleModifier.Undercurl}
 
     # The color should be syntaxCheckErr
     check buf.highlight.getColorPair(0, 0) == EditorColorPairIndex.syntaxCheckErr
@@ -1767,7 +1768,7 @@ suite "Buffer - Diagnostic Highlights":
     buf.updateHighlight()
 
     check buf.highlight.getColorPair(0, 6) == EditorColorPairIndex.syntaxCheckWarn
-    check buf.highlight.getSegmentModifiers(0, 6) == {StyleModifier.Undercurl}
+    check buf.highlight.getSegmentModifiers(0, 6) == {rt.StyleModifier.Undercurl}
 
     # Outside diagnostic range should have no underline
     check buf.highlight.getSegmentModifiers(0, 0) == {}

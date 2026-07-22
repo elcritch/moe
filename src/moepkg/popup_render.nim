@@ -28,9 +28,7 @@ import std/unicode
 
 import render_target, unicode_utils
 
-proc drawBorder*(
-    termBuffer: var RenderTarget, x, y, width, height: int, style: Style
-) =
+proc drawBorder*(termBuffer: var RenderTarget, x, y, width, height: int, style: Style) =
   ## Draw a single-cell box border at (x, y) spanning width × height, clipped to
   ## the buffer. The interior (content) area is the (height - 2) rows between the
   ## top and bottom edges. Corners use ┌ ┐ └ ┘ and edges use ─ │.

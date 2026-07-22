@@ -23,7 +23,27 @@ import std/[unittest, monotimes, times]
 
 import pkg/celina
 
-import ../src/moepkg/[notification_popup, color, theme, unicode_utils]
+import
+  ../src/moepkg/[celina_render_target, notification_popup, color, theme, unicode_utils]
+import ../src/moepkg/render_target as rt
+
+func `==`(a: celina.ColorValue, b: rt.ColorValue): bool =
+  case b.kind
+  of rt.cvkDefault:
+    a.kind == celina.Default
+  of rt.cvkIndexed256:
+    a.kind == celina.Indexed256 and a.indexed256 == b.indexed256
+  of rt.cvkRgb:
+    a.kind == celina.Rgb and a.rgb.r == b.rgb.r and a.rgb.g == b.rgb.g and
+      a.rgb.b == b.rgb.b
+
+func `==`(a: celina.Style, b: rt.Style): bool =
+  let expected = b.toCelinaStyle
+  a.fg == b.fg and a.bg == b.bg and a.modifiers == expected.modifiers
+
+proc renderNotificationPopup(termBuffer: var Buffer, rect: NotificationRect) =
+  var target = initCelinaRenderTarget(termBuffer)
+  notification_popup.renderNotificationPopup(target, rect)
 
 # Initialize theme colors for tests
 setThemeColors(DefaultColors)

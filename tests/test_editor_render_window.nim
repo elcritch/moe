@@ -21,13 +21,168 @@
 ## This module tests window and line rendering procedures
 
 import std/[unittest, options, strutils, tables, unicode]
-import pkg/celina
+from pkg/celina import nil
 import
   ../src/moepkg/[
     editor, buffer, config, config_loader, render_utils, modes, color, highlight, types
   ]
 import ../src/moepkg/editor_render_window {.all.}
-import ../src/moepkg/[editor_render_helpers, style_patch, colorcode, editor_codelens]
+import
+  ../src/moepkg/[
+    celina_render_target, editor_render_helpers, style_patch, colorcode,
+    editor_codelens, render_target,
+  ]
+
+func `==`(a: celina.ColorValue, b: ColorValue): bool =
+  case b.kind
+  of cvkDefault:
+    a.kind == celina.Default
+  of cvkIndexed256:
+    a.kind == celina.Indexed256 and a.indexed256 == b.indexed256
+  of cvkRgb:
+    a.kind == celina.Rgb and a.rgb.r == b.rgb.r and a.rgb.g == b.rgb.g and
+      a.rgb.b == b.rgb.b
+
+func `==`(a: ColorValue, b: celina.ColorValue): bool =
+  b == a
+
+func `==`(a: celina.Style, b: Style): bool =
+  let expected = b.toCelinaStyle
+  a.fg == b.fg and a.bg == b.bg and a.modifiers == expected.modifiers
+
+func `==`(a: Style, b: celina.Style): bool =
+  b == a
+
+proc setString(
+    buffer: var celina.Buffer, x, y: int, text: string, style: Style
+) {.inline.} =
+  celina.setString(buffer, x, y, text, style.toCelinaStyle)
+
+proc `[]`(buffer: celina.Buffer, x, y: int): celina.Cell {.inline.} =
+  celina.`[]`(buffer, x, y)
+
+proc fillLineBackground(
+    e: Editor,
+    buffer: var celina.Buffer,
+    screenX, screenY: int,
+    lineIndex, cursorLine: int,
+    windowRightEdge: int,
+    cursorDisplayCol: int = -1,
+    textBuffer: TextBuffer = nil,
+    isEmptyLine: bool = false,
+    hasSelection: bool = false,
+) =
+  var target = initCelinaRenderTarget(buffer)
+  e.fillLineBackground(
+    target, screenX, screenY, lineIndex, cursorLine, windowRightEdge, cursorDisplayCol,
+    textBuffer, isEmptyLine, hasSelection,
+  )
+
+proc renderLineSegmentWithSelection(
+    e: Editor,
+    textBuffer: TextBuffer,
+    buffer: var celina.Buffer,
+    displayLine: string,
+    screenX, screenY: int,
+    lineIndex: int,
+    startColumn: int,
+    ctx: RenderContext,
+    useRunes: bool = true,
+    appendVirtualText: bool = true,
+    precomputed: Option[LinePrecomputed] = none(LinePrecomputed),
+) =
+  var target = initCelinaRenderTarget(buffer)
+  e.renderLineSegmentWithSelection(
+    textBuffer, target, displayLine, screenX, screenY, lineIndex, startColumn, ctx,
+    useRunes, appendVirtualText, precomputed,
+  )
+
+proc renderWindowLineWrapped(
+    e: Editor,
+    buffer: var celina.Buffer,
+    window: EditorWindow,
+    lineNumOffset: int,
+    ctx: RenderContext,
+    screenY: var int,
+    lineIndex: var int,
+    visibleHeight: int,
+    tabLineOffset: int,
+    skipSegments: int = 0,
+) =
+  var target = initCelinaRenderTarget(buffer)
+  e.renderWindowLineWrapped(
+    target, window, lineNumOffset, ctx, screenY, lineIndex, visibleHeight,
+    tabLineOffset, skipSegments,
+  )
+
+proc renderWindowLineNoWrap(
+    e: Editor,
+    buffer: var celina.Buffer,
+    window: EditorWindow,
+    lineNumOffset: int,
+    ctx: RenderContext,
+    screenY: int,
+    lineIndex: int,
+) =
+  var target = initCelinaRenderTarget(buffer)
+  e.renderWindowLineNoWrap(target, window, lineNumOffset, ctx, screenY, lineIndex)
+
+proc renderWindowSidebar(
+    buffer: var celina.Buffer,
+    window: EditorWindow,
+    sidebar: Sidebar,
+    screenY: int,
+    sidebarIndex: int,
+    sidebarOffset: int,
+) =
+  var target = initCelinaRenderTarget(buffer)
+  renderWindowSidebar(target, window, sidebar, screenY, sidebarIndex, sidebarOffset)
+
+proc renderFoldLine(
+    e: Editor,
+    buffer: var celina.Buffer,
+    window: EditorWindow,
+    lineNumOffset: int,
+    screenY: int,
+    fold: Fold,
+) =
+  var target = initCelinaRenderTarget(buffer)
+  e.renderFoldLine(target, window, lineNumOffset, screenY, fold)
+
+proc renderScrollbar(
+    e: Editor,
+    buffer: var celina.Buffer,
+    window: EditorWindow,
+    visibleHeight: int,
+    tabLineOffset: int,
+    lineNumOffset: int,
+) =
+  var target = initCelinaRenderTarget(buffer)
+  e.renderScrollbar(target, window, visibleHeight, tabLineOffset, lineNumOffset)
+
+proc renderWindow(
+    e: Editor,
+    buffer: var celina.Buffer,
+    window: EditorWindow,
+    lineNumOffset: int,
+    isBottomWindow: bool,
+    isActiveWindow: bool,
+    tabLineOffset: int = 0,
+) =
+  var target = initCelinaRenderTarget(buffer)
+  e.renderWindow(
+    target, window, lineNumOffset, isBottomWindow, isActiveWindow, tabLineOffset
+  )
+
+proc renderWindowSeparator(
+    e: Editor,
+    buffer: var celina.Buffer,
+    window: EditorWindow,
+    nextWindow: EditorWindow,
+    isBottomWindow: bool,
+) =
+  var target = initCelinaRenderTarget(buffer)
+  e.renderWindowSeparator(target, window, nextWindow, isBottomWindow)
 
 proc createTestEditor(): Editor =
   ## Create a minimal editor for testing
@@ -36,10 +191,10 @@ proc createTestEditor(): Editor =
   let vr = newValidationResult()
   result = newEditor(config, vr)
 
-proc createTestBuffer(): Buffer =
+proc createTestBuffer(): celina.Buffer =
   ## Create a minimal Celina Buffer for testing
-  result = newBuffer(80, 24)
-  result.area = Rect(x: 0, y: 0, width: 80, height: 24)
+  result = celina.newBuffer(80, 24)
+  result.area = celina.Rect(x: 0, y: 0, width: 80, height: 24)
 
 proc createTestSidebar(height: int): Sidebar =
   ## Create a test sidebar with correct number of items per row
@@ -1226,8 +1381,8 @@ suite "renderWindow - Edge cases":
 
   test "Render window with very small size":
     let e = createTestEditor()
-    var buffer = newBuffer(20, 5)
-    buffer.area = Rect(x: 0, y: 0, width: 20, height: 5)
+    var buffer = celina.newBuffer(20, 5)
+    buffer.area = celina.Rect(x: 0, y: 0, width: 20, height: 5)
 
     e.viewport.width = 20
     e.viewport.height = 5
@@ -2357,7 +2512,7 @@ suite "renderLineSegmentWithSelection - trailing space highlight":
     e.state.showIndentationLines = false
 
     let tb = newTextBuffer("hello   ")
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,
@@ -2385,7 +2540,7 @@ suite "renderLineSegmentWithSelection - trailing space highlight":
     e.state.showIndentationLines = false
 
     let tb = newTextBuffer("hello   ")
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: 0,
       cursorCol: 0,
@@ -2413,7 +2568,7 @@ suite "renderLineSegmentWithSelection - trailing space highlight":
     e.state.showIndentationLines = false
 
     let tb = newTextBuffer("hello   ")
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: 0,
       cursorCol: 0,
@@ -2443,7 +2598,7 @@ suite "renderLineSegmentWithSelection - trailing space highlight":
     e.state.showIndentationLines = false
 
     let tb = newTextBuffer("hello   ")
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,
@@ -2471,7 +2626,7 @@ suite "renderLineSegmentWithSelection - trailing space highlight":
     e.state.showIndentationLines = false
 
     let tb = newTextBuffer("entry   ")
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,
@@ -2496,7 +2651,7 @@ suite "renderLineSegmentWithSelection - trailing space highlight":
     e.state.showIndentationLines = false
 
     let tb = newTextBuffer("diff   ")
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,
@@ -2524,7 +2679,7 @@ suite "renderLineSegmentWithSelection - zero-width rune folding":
     var e = plainEditor()
     let text = "e" & $Rune(0x0301) & "X" # "éX" in NFD
     let tb = newTextBuffer(text)
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,
@@ -2545,7 +2700,7 @@ suite "renderLineSegmentWithSelection - zero-width rune folding":
     var e = plainEditor()
     let text = "字" & $Rune(0xFE0E) & "z" # wide base + VS-15 + ascii
     let tb = newTextBuffer(text)
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,
@@ -2573,7 +2728,7 @@ suite "renderLineSegmentWithSelection - full-width space highlight":
 
     let text = "ab" & $FULLWIDTH_SPACE & "cd"
     let tb = newTextBuffer(text)
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,
@@ -2600,7 +2755,7 @@ suite "renderLineSegmentWithSelection - full-width space highlight":
 
     let text = "ab" & $FULLWIDTH_SPACE & "cd"
     let tb = newTextBuffer(text)
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,
@@ -2626,7 +2781,7 @@ suite "renderLineSegmentWithSelection - full-width space highlight":
 
     let text = "ab" & $FULLWIDTH_SPACE & "cd"
     let tb = newTextBuffer(text)
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,
@@ -2654,7 +2809,7 @@ suite "renderLineSegmentWithSelection - tab trailing space highlight":
 
     let text = "ab\t"
     let tb = newTextBuffer(text)
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,
@@ -2682,7 +2837,7 @@ suite "renderLineSegmentWithSelection - tab trailing space highlight":
 
     let text = "ab\t"
     let tb = newTextBuffer(text)
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: 0,
       cursorCol: 0,
@@ -2710,7 +2865,7 @@ suite "renderLineSegmentWithSelection - tab trailing space highlight":
 
     let text = "ab\t"
     let tb = newTextBuffer(text)
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,
@@ -2955,8 +3110,8 @@ suite "charOverridePatch":
     e.config.highlight.trailingSpaces = true
     let ctx = fileEditCtx()
     let ccStyle = Style(
-      fg: ColorValue(kind: Default),
-      bg: ColorValue(kind: Rgb, rgb: RgbColor(r: 1, g: 2, b: 3)),
+      fg: ColorValue(kind: cvkDefault),
+      bg: ColorValue(kind: cvkRgb, rgb: RgbColor(r: 1, g: 2, b: 3)),
       modifiers: {},
     )
     let lineCtx = LineStyleContext(
@@ -2971,8 +3126,8 @@ suite "charOverridePatch":
     let e = createTestEditor()
     let ctx = fileEditCtx()
     let ccStyle = Style(
-      fg: ColorValue(kind: Default),
-      bg: ColorValue(kind: Rgb, rgb: RgbColor(r: 1, g: 2, b: 3)),
+      fg: ColorValue(kind: cvkDefault),
+      bg: ColorValue(kind: cvkRgb, rgb: RgbColor(r: 1, g: 2, b: 3)),
       modifiers: {},
     )
     let lineCtx = LineStyleContext(
@@ -3305,7 +3460,7 @@ suite "renderLineSegmentWithSelection - end-of-line virtual text":
     e.state.showIndentationLines = false
 
     let tb = newTextBuffer("abc")
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let provider = stubProvider(
       @[
         VirtualText(
@@ -3347,7 +3502,7 @@ suite "renderLineSegmentWithSelection - end-of-line virtual text":
     e.state.showIndentationLines = false
 
     let tb = newTextBuffer("abc")
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let provider = stubProvider(
       @[
         VirtualText(
@@ -3385,7 +3540,7 @@ suite "renderLineSegmentWithSelection - end-of-line virtual text":
     e.state.showIndentationLines = false
 
     let tb = newTextBuffer("abc")
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,
@@ -3412,7 +3567,7 @@ proc inlayHintProvider(): VirtualTextProvider =
     ]
   )
 
-proc rowHasHint(buffer: Buffer): bool =
+proc rowHasHint(buffer: celina.Buffer): bool =
   for x in 0 ..< 80:
     if buffer[x, 0].symbol == ":":
       return true
@@ -3591,7 +3746,7 @@ suite "End-of-line virtual text - cursor line highlight":
     e.state.showIndentationLines = false
 
     let tb = newTextBuffer("abc")
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let provider = stubProvider(
       @[
         VirtualText(
@@ -3639,7 +3794,7 @@ suite "End-of-line virtual text - cursor line highlight":
     e.state.showIndentationLines = false
 
     let tb = newTextBuffer("abc\ndef")
-    var buf = newBuffer(80, 2)
+    var buf = celina.newBuffer(80, 2)
     let provider = stubProvider(
       @[
         VirtualText(
@@ -3691,7 +3846,7 @@ suite "End-of-line virtual text - cursor line highlight":
     check providers.len == 1
 
     let tb = newTextBuffer("abc")
-    var buf = newBuffer(80, 1)
+    var buf = celina.newBuffer(80, 1)
     let ctx = RenderContext(
       cursorLine: -1,
       cursorCol: -1,

@@ -21,7 +21,7 @@
 
 import std/[options, strutils]
 
-import pkg/celina
+import pkg/results
 
 import
   types/editor_types,
@@ -30,7 +30,8 @@ import
   render_utils,
   config_mode,
   editor_window_layout,
-  unicode_utils
+  unicode_utils,
+  render_target
 import terminal/ansi_parser
 
 proc renderConfig*(
@@ -255,17 +256,17 @@ proc renderConfig*(
     e.state.cursorVisible = e.state.hasOverlay
 
 proc terminalColorToColorValue(tc: TerminalColor): ColorValue =
-  ## Convert ansi_parser TerminalColor to celina ColorValue.
+  ## Convert ansi_parser TerminalColor to render ColorValue.
   case tc.kind
   of ckDefault:
-    ColorValue(kind: Default)
+    ColorValue(kind: cvkDefault)
   of ckIndexed:
-    ColorValue(kind: Indexed256, indexed256: tc.index)
+    ColorValue(kind: cvkIndexed256, indexed256: tc.index)
   of ckRgb:
-    ColorValue(kind: celina.Rgb, rgb: RgbColor(r: tc.r, g: tc.g, b: tc.b))
+    ColorValue(kind: cvkRgb, rgb: RgbColor(r: tc.r, g: tc.g, b: tc.b))
 
 proc terminalCellToStyle(cell: TerminalCell): Style =
-  ## Convert a TerminalCell's colors and attributes to a celina Style.
+  ## Convert a TerminalCell's colors and attributes to render Style.
   var modifiers: set[StyleModifier] = {}
   if taBold in cell.attrs:
     modifiers.incl(StyleModifier.Bold)

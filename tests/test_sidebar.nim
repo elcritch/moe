@@ -19,9 +19,7 @@
 
 import std/[options, unittest]
 
-import pkg/celina
-
-import ../src/moepkg/[buffer, sidebar, color, theme]
+import ../src/moepkg/[buffer, sidebar, color, render_target, theme]
 
 suite "Sidebar - initSidebar":
   test "Initialize sidebar with default width":
@@ -382,7 +380,7 @@ suite "Sidebar - Style functions":
 
   test "emptyStyle has default foreground":
     let style = emptyStyle()
-    check style.fg.kind == Default
+    check style.fg.kind == cvkDefault
 
 suite "Sidebar - resizeSidebar edge cases":
   test "Resize sidebar to zero height":

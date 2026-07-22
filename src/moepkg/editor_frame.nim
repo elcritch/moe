@@ -25,8 +25,6 @@
 
 import std/[options, strutils, monotimes, times, tables]
 
-import pkg/celina
-
 import
   types/editor_types,
   editor_reload,
@@ -45,7 +43,8 @@ import
 
 import
   status_line, render_utils, logger, message_log, debug_viewer, completion,
-  signature_help, hover_popup, unicode_utils, motion, buffer, lsp_integration
+  signature_help, hover_popup, unicode_utils, motion, buffer, lsp_integration,
+  render_target
 
 proc shutdown*(e: Editor) =
   ## Shutdown editor and clean up resources (including LSP servers)

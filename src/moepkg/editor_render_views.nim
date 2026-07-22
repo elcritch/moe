@@ -21,8 +21,6 @@
 
 import std/[options, strutils, unicode]
 
-import pkg/celina
-
 import
   types/editor_types,
   editor_window,
@@ -36,7 +34,8 @@ import
   unicode_utils,
   command_completion,
   color,
-  window_manager
+  window_manager,
+  render_target
 
 type WindowLayout = object
   ## Per-frame layout metrics for a window. A pure, idempotent projection of
@@ -466,7 +465,7 @@ proc renderWrappedInput(
     # The steady single row keeps the overlay-styled status line beneath the
     # input, matching the previous shared-row rendering.
     buffer.fill(
-      Rect(x: buffer.area.x, y: areaTopY, width: buffer.area.width, height: areaH),
+      RenderRect(x: buffer.area.x, y: areaTopY, width: buffer.area.width, height: areaH),
       cell(" ", style),
     )
 
@@ -556,7 +555,9 @@ proc renderBottomLines*(e: Editor, buffer: var RenderTarget) =
           else:
             allLines
       buffer.fill(
-        Rect(x: buffer.area.x, y: areaTopY, width: buffer.area.width, height: lines.len),
+        RenderRect(
+          x: buffer.area.x, y: areaTopY, width: buffer.area.width, height: lines.len
+        ),
         cell(" ", commandStyle()),
       )
       for i, line in lines:

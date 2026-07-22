@@ -21,7 +21,7 @@ import std/[unittest, options]
 
 import pkg/celina
 
-import ../src/moepkg/[colorcode, color]
+import ../src/moepkg/[colorcode, color, render_target]
 
 suite "colorcode: scanLineForColorCodes":
   test "#FF0000 - red, contrast foreground is white":

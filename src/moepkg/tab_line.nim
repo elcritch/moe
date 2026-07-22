@@ -24,9 +24,7 @@
 
 import std/[options, os, strutils]
 
-import pkg/celina
-
-import types, buffer, color, unicode_utils, modes
+import types, buffer, color, unicode_utils, modes, render_target
 
 proc toggleTabLine*(state: var EditorState) =
   ## Toggle the visibility of the tab line

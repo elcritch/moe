@@ -19,12 +19,11 @@
 
 import std/[unittest, options]
 
-import pkg/celina
-
+import ../src/moepkg/render_target
 import ../src/moepkg/style_patch {.all.}
 
 func rgb(r, g, b: int): ColorValue =
-  ColorValue(kind: Rgb, rgb: RgbColor(r: r.uint8, g: g.uint8, b: b.uint8))
+  ColorValue(kind: cvkRgb, rgb: RgbColor(r: r.uint8, g: g.uint8, b: b.uint8))
 
 func baseStyle(): Style =
   Style(fg: rgb(10, 20, 30), bg: rgb(40, 50, 60), modifiers: {StyleModifier.Bold})

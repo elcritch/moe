@@ -22,6 +22,7 @@ import std/[unittest, unicode, os, strutils, json, tables]
 import pkg/celina
 
 import ../src/moepkg/highlight
+import ../src/moepkg/render_target as rt
 import ../src/moepkg/syntax/tokenizer
 import ../src/moepkg/buffer {.all.}
 import ../src/moepkg/lsp/protocol/types as lspTypes
@@ -1163,14 +1164,14 @@ suite "Highlight - diagnostics survive progressive load":
     ]
     buf.highlightNeedsUpdate = true
     buf.updateHighlight()
-    check buf.highlight.getSegmentModifiers(500, 2) == {StyleModifier.Undercurl}
+    check buf.highlight.getSegmentModifiers(500, 2) == {rt.StyleModifier.Undercurl}
 
     # The next tick rewinds into the block scalar (the stored boundary state
     # at the 1000-line chunk edge is gtLongStringLit), truncating the display
     # segments from the scalar header down — including row 500.
     while buf.continueInitialHighlight():
       discard
-    check buf.highlight.getSegmentModifiers(500, 2) == {StyleModifier.Undercurl}
+    check buf.highlight.getSegmentModifiers(500, 2) == {rt.StyleModifier.Undercurl}
 
   test "continueUriScan does not bake diagnostic styling into the cache":
     # Regression: reassigning incrementalHighlight.segments from
@@ -1211,7 +1212,7 @@ suite "Highlight - diagnostics survive progressive load":
     ]
     buf.highlightNeedsUpdate = true
     buf.updateHighlight()
-    check StyleModifier.Undercurl in buf.highlight.getSegmentModifiers(100, 2)
+    check rt.StyleModifier.Undercurl in buf.highlight.getSegmentModifiers(100, 2)
 
     # Rewind the URI scan and re-process the chunk that already carries the
     # diagnostic style — the same path an edit-triggered rewind takes.
@@ -1228,7 +1229,7 @@ suite "Highlight - diagnostics survive progressive load":
     buf.highlightNeedsUpdate = true
     buf.updateHighlight()
 
-    check StyleModifier.Undercurl notin buf.highlight.getSegmentModifiers(100, 2)
+    check rt.StyleModifier.Undercurl notin buf.highlight.getSegmentModifiers(100, 2)
     check buf.highlight.getColorPair(100, 2) notin {
       EditorColorPairIndex.syntaxCheckErr, EditorColorPairIndex.syntaxCheckWarn,
       EditorColorPairIndex.syntaxCheckInfo, EditorColorPairIndex.syntaxCheckHint,
@@ -1463,7 +1464,7 @@ suite "Highlight - getSegmentModifiers":
           lastRow: 0,
           lastColumn: 5,
           color: EditorColorPairIndex.default,
-          style: Style(modifiers: {StyleModifier.Undercurl}),
+          style: rt.Style(modifiers: {rt.StyleModifier.Undercurl}),
         )
       ]
     )
@@ -1478,11 +1479,11 @@ suite "Highlight - getSegmentModifiers":
           lastRow: 0,
           lastColumn: 10,
           color: EditorColorPairIndex.default,
-          style: Style(modifiers: {StyleModifier.Undercurl}),
+          style: rt.Style(modifiers: {rt.StyleModifier.Undercurl}),
         )
       ]
     )
-    check h.getSegmentModifiers(0, 3) == {StyleModifier.Undercurl}
+    check h.getSegmentModifiers(0, 3) == {rt.StyleModifier.Undercurl}
 
   test "Segment without modifiers returns empty set":
     let h = Highlight(
@@ -1493,10 +1494,11 @@ suite "Highlight - getSegmentModifiers":
           lastRow: 0,
           lastColumn: 10,
           color: EditorColorPairIndex.default,
-          style: Style(modifiers: {}),
+          style: rt.Style(modifiers: {}),
         )
       ]
     )
+    check h.getSegmentModifiers(0, 3) == {}
 
 suite "Highlight - addModifier":
   test "Fully contained segment":
@@ -1513,7 +1515,7 @@ suite "Highlight - addModifier":
         )
       ]
     )
-    h.addModifier(0, 0, 0, 10, StyleModifier.Underline)
+    h.addModifier(0, 0, 0, 10, rt.StyleModifier.Underline)
     check h.colorSegments.len == 1
     check Underline in h.colorSegments[0].style.modifiers
 
@@ -1531,7 +1533,7 @@ suite "Highlight - addModifier":
         )
       ]
     )
-    h.addModifier(1, 0, 1, 5, StyleModifier.Underline)
+    h.addModifier(1, 0, 1, 5, rt.StyleModifier.Underline)
     check h.colorSegments.len == 1
     check Underline notin h.colorSegments[0].style.modifiers
 
@@ -1549,7 +1551,7 @@ suite "Highlight - addModifier":
         )
       ]
     )
-    h.addModifier(0, 5, 0, 10, StyleModifier.Underline)
+    h.addModifier(0, 5, 0, 10, rt.StyleModifier.Underline)
     check h.colorSegments.len == 3
     # Before: 0..4, no modifier
     check h.colorSegments[0].firstColumn == 0
@@ -1578,7 +1580,7 @@ suite "Highlight - addModifier":
         )
       ]
     )
-    h.addModifier(0, 0, 0, 5, StyleModifier.Underline)
+    h.addModifier(0, 0, 0, 5, rt.StyleModifier.Underline)
     check h.colorSegments.len == 2
     # Modified: 0..5
     check h.colorSegments[0].firstColumn == 0
@@ -1603,7 +1605,7 @@ suite "Highlight - addModifier":
         )
       ]
     )
-    h.addModifier(0, 15, 0, 20, StyleModifier.Underline)
+    h.addModifier(0, 15, 0, 20, rt.StyleModifier.Underline)
     check h.colorSegments.len == 2
     # Before: 0..14
     check h.colorSegments[0].firstColumn == 0
@@ -1636,7 +1638,7 @@ suite "Highlight - addModifier":
         ),
       ]
     )
-    h.addModifier(0, 5, 0, 14, StyleModifier.Underline)
+    h.addModifier(0, 5, 0, 14, rt.StyleModifier.Underline)
     check h.colorSegments.len == 4
     # seg0 before: 0..4
     check h.colorSegments[0].firstColumn == 0
@@ -1664,11 +1666,11 @@ suite "Highlight - addModifier":
           lastRow: 0,
           lastColumn: 10,
           color: EditorColorPairIndex.default,
-          style: Style(modifiers: {StyleModifier.Bold}),
+          style: rt.Style(modifiers: {rt.StyleModifier.Bold}),
         )
       ]
     )
-    h.addModifier(0, 0, 0, 10, StyleModifier.Underline)
+    h.addModifier(0, 0, 0, 10, rt.StyleModifier.Underline)
     check h.colorSegments.len == 1
     check Bold in h.colorSegments[0].style.modifiers
     check Underline in h.colorSegments[0].style.modifiers
@@ -1686,7 +1688,7 @@ suite "Highlight - addModifier":
         )
       ]
     )
-    h.addModifier(0, 5, 0, 10, StyleModifier.Underline)
+    h.addModifier(0, 5, 0, 10, rt.StyleModifier.Underline)
     check h.colorSegments.len == 3
     for seg in h.colorSegments:
       check seg.color == EditorColorPairIndex.keyword
@@ -1706,7 +1708,7 @@ suite "Highlight - addModifier":
         )
       ]
     )
-    h.addModifier(1, 0, 1, 10, StyleModifier.Underline)
+    h.addModifier(1, 0, 1, 10, rt.StyleModifier.Underline)
     check h.colorSegments.len == 3
     # Before: row 0 col 5 .. row 0 (no modifier)
     check h.colorSegments[0].firstRow == 0
@@ -1741,7 +1743,7 @@ suite "Highlight - addModifier":
         )
       ]
     )
-    h.addModifier(1, 0, 1, 20, StyleModifier.Underline)
+    h.addModifier(1, 0, 1, 20, rt.StyleModifier.Underline)
     check h.colorSegments.len == 3
     # Before: row 0
     check h.colorSegments[0].firstRow == 0
@@ -2695,7 +2697,7 @@ suite "Highlight - Semantic overlay":
           lastRow: 0,
           lastColumn: 9,
           color: EditorColorPairIndex.syntaxCheckErr,
-          style: Style(modifiers: {StyleModifier.Undercurl}),
+          style: rt.Style(modifiers: {rt.StyleModifier.Undercurl}),
         )
       ],
       hasDiagnostics: true,
@@ -2703,7 +2705,7 @@ suite "Highlight - Semantic overlay":
     let outcome = applySemanticTokens(h, mkResp(@[0, 2, 3, 1, 0]), colorTab, 1)
     check outcome == saoDone
     check h.getColorPair(0, 3) == EditorColorPairIndex.syntaxCheckErr
-    check h.getSegmentModifiers(0, 3) == {StyleModifier.Undercurl}
+    check h.getSegmentModifiers(0, 3) == {rt.StyleModifier.Undercurl}
 
   test "Overlay still wins when hasDiagnostics is false":
     # Guard: the priority check must not activate on a non-diagnostic segment
@@ -2734,7 +2736,7 @@ suite "Highlight - Semantic overlay":
           lastRow: 0,
           lastColumn: 9,
           color: EditorColorPairIndex.default,
-          style: Style(modifiers: {StyleModifier.Undercurl}),
+          style: rt.Style(modifiers: {rt.StyleModifier.Undercurl}),
         )
       ]
     )
@@ -2744,16 +2746,17 @@ suite "Highlight - Semantic overlay":
         firstColumn: 2,
         length: 3,
         color: EditorColorPairIndex.function,
-        style: Style(modifiers: {StyleModifier.Bold}),
+        style: rt.Style(modifiers: {rt.StyleModifier.Bold}),
       )
     )
     h.semantic[0] = line
     # Position under the overlay: colour switches, both modifiers survive.
     check h.getColorPair(0, 3) == EditorColorPairIndex.function
-    check h.getSegmentModifiers(0, 3) == {StyleModifier.Undercurl, StyleModifier.Bold}
+    check h.getSegmentModifiers(0, 3) ==
+      {rt.StyleModifier.Undercurl, rt.StyleModifier.Bold}
     # Outside the overlay: syntax only.
     check h.getColorPair(0, 6) == EditorColorPairIndex.default
-    check h.getSegmentModifiers(0, 6) == {StyleModifier.Undercurl}
+    check h.getSegmentModifiers(0, 6) == {rt.StyleModifier.Undercurl}
 
   test "Malformed data.len (not multiple of 5) is rejected":
     let h = Highlight(colorSegments: @[])
@@ -3053,7 +3056,7 @@ suite "Highlight - Semantic overlay":
     # Cache hit: second call returns the same colour.
     check tab.resolveTokenColor(0, 2).color == EditorColorPairIndex.constParameter
     # `declaration` maps to Bold style modifier.
-    check tab.resolveTokenColor(0, 1).style == {StyleModifier.Bold}
+    check tab.resolveTokenColor(0, 1).style == {rt.StyleModifier.Bold}
 
   test "applySemanticTokens threads modifiers through to the overlay":
     let modLegend = SemanticTokensLegend(
@@ -3721,7 +3724,7 @@ suite "Highlight - Semantic overlay":
     # tokenModifiers=1 (declaration bit).
     let outcome = applySemanticTokens(h, mkResp(@[0, 0, 3, 0, 1]), tab, 1)
     check outcome == saoDone
-    check h.getSegmentModifiers(0, 0) == {StyleModifier.Bold}
+    check h.getSegmentModifiers(0, 0) == {rt.StyleModifier.Bold}
 
   test "Inverted range (first > last) is rejected as malformed":
     let h = Highlight(colorSegments: @[])

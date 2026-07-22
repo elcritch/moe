@@ -72,9 +72,7 @@ func defaultColorValue*(): ColorValue {.inline.} =
 func defaultStyle*(): Style {.inline.} =
   Style(fg: defaultColorValue(), bg: defaultColorValue(), modifiers: {})
 
-proc cell*(
-    symbol: string = " ", style: Style = defaultStyle()
-): RenderCell {.inline.} =
+proc cell*(symbol: string = " ", style: Style = defaultStyle()): RenderCell {.inline.} =
   RenderCell(symbol: symbol, style: style)
 
 proc cell*(symbol: char, style: Style = defaultStyle()): RenderCell {.inline.} =
@@ -82,3 +80,21 @@ proc cell*(symbol: char, style: Style = defaultStyle()): RenderCell {.inline.} =
 
 proc cell*(symbol: Rune, style: Style = defaultStyle()): RenderCell {.inline.} =
   cell($symbol, style)
+
+func `==`*(a, b: RgbColor): bool {.inline.} =
+  a.r == b.r and a.g == b.g and a.b == b.b
+
+func `==`*(a, b: ColorValue): bool =
+  if a.kind != b.kind:
+    return false
+
+  case a.kind
+  of cvkDefault:
+    true
+  of cvkIndexed256:
+    a.indexed256 == b.indexed256
+  of cvkRgb:
+    a.rgb == b.rgb
+
+func `==`*(a, b: Style): bool {.inline.} =
+  a.fg == b.fg and a.bg == b.bg and a.modifiers == b.modifiers

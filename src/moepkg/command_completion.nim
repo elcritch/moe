@@ -24,11 +24,9 @@
 
 import std/[algorithm, strutils, unicode, tables, os]
 
-import pkg/celina
-
 import
   command_line, command_line_commands, fuzzy_match, help_description, setting_options,
-  popup_render, color, unicode_utils
+  popup_render, color, unicode_utils, render_target
 
 import types/command_completion_types
 export command_completion_types

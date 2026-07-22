@@ -19,9 +19,10 @@
 
 import std/[unittest, options]
 
-import pkg/celina
+import pkg/results
 
 import ../src/moepkg/color {.all.}
+import ../src/moepkg/render_target as rt
 
 suite "color - Rgb type":
   test "isTermDefaultColor with terminal default":
@@ -301,40 +302,40 @@ suite "color - toColorValue":
 
   test "terminal default color":
     let cv = TerminalDefaultRgb.toColorValue
-    check cv.kind == Default
+    check cv.kind == rt.cvkDefault
 
   test "cmkNone mode returns default":
     globalColorMode = cmkNone
     let color = Rgb(red: 255, green: 0, blue: 0)
     let cv = color.toColorValue
-    check cv.kind == Default
+    check cv.kind == rt.cvkDefault
 
   test "cmk8color mode returns indexed":
     globalColorMode = cmk8color
     let color = Rgb(red: 255, green: 0, blue: 0)
     let cv = color.toColorValue
-    check cv.kind == Indexed256
+    check cv.kind == rt.cvkIndexed256
     check cv.indexed256 == 1'u8
 
   test "cmk16color mode returns indexed":
     globalColorMode = cmk16color
     let color = Rgb(red: 255, green: 0, blue: 0)
     let cv = color.toColorValue
-    check cv.kind == Indexed256
+    check cv.kind == rt.cvkIndexed256
     check cv.indexed256 == 9'u8
 
   test "cmk256color mode returns indexed":
     globalColorMode = cmk256color
     let color = Rgb(red: 255, green: 0, blue: 0)
     let cv = color.toColorValue
-    check cv.kind == Indexed256
+    check cv.kind == rt.cvkIndexed256
     check cv.indexed256 == 196'u8
 
   test "cmk24bit mode returns rgb":
     globalColorMode = cmk24bit
     let color = Rgb(red: 100, green: 150, blue: 200)
     let cv = color.toColorValue
-    check cv.kind == ColorKind.Rgb
+    check cv.kind == rt.cvkRgb
     check cv.rgb.r == 100
     check cv.rgb.g == 150
     check cv.rgb.b == 200
@@ -353,9 +354,9 @@ suite "color - toStyle":
       foreground: ThemeColor(rgb: Rgb(red: 255, green: 0, blue: 0)),
       background: ThemeColor(rgb: TerminalDefaultRgb),
     )
-    let style = colorPair.toStyle({Bold, Underline})
-    check Bold in style.modifiers
-    check Underline in style.modifiers
+    let style = colorPair.toStyle({rt.StyleModifier.Bold, rt.StyleModifier.Underline})
+    check rt.StyleModifier.Bold in style.modifiers
+    check rt.StyleModifier.Underline in style.modifiers
 
 suite "color - theme colors":
   test "setThemeColors and getThemeColor":

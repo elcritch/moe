@@ -26,7 +26,7 @@
 
 import std/[options, unicode]
 
-import render_types, types, buffer, color
+import render_types, types, buffer, color, unicode_utils
 
 # Sidebar display constants
 const DefaultSidebarWidth* = 2

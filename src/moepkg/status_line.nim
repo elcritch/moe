@@ -19,9 +19,10 @@
 
 import std/[strformat, options, strutils, os, unicode, tables, monotimes, times]
 
-import pkg/[celina, results]
+import pkg/results
 
-import types, buffer, modes, color, config, git_diff, unicode_utils, highlight
+import
+  types, buffer, modes, color, config, git_diff, unicode_utils, highlight, render_target
 import syntax/tokenizer
 
 type

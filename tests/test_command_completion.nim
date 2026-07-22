@@ -22,7 +22,17 @@ import std/[unittest, os, tables, algorithm, strutils]
 import pkg/celina
 
 import ../src/moepkg/[command_line, command_config, fuzzy_match]
+import ../src/moepkg/celina_render_target
 import ../src/moepkg/command_completion {.all.}
+
+proc renderCommandCompletionPopup(
+    termBuffer: var Buffer,
+    menu: CommandCompletionMenu,
+    pos: CommandPopupPosition,
+    showBorder: bool = true,
+) =
+  var target = initCelinaRenderTarget(termBuffer)
+  renderCommandCompletionPopup(target, menu, pos, showBorder)
 
 suite "CommandCompletion - extractCommandPrefix":
   test "Extract prefix from simple command :wq":

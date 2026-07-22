@@ -25,9 +25,7 @@
 
 import std/[strutils, unicode]
 
-import pkg/celina
-
-import unicode_utils, color
+import unicode_utils, color, render_target
 
 type
   HoverPopupState* = enum

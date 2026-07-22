@@ -19,9 +19,7 @@
 
 import std/[options, unittest]
 
-import pkg/celina
-
-import ../src/moepkg/[buffer, sidebar, color, theme]
+import ../src/moepkg/[buffer, sidebar, color, theme, render_target]
 
 suite "ModifiedLines - Basic Tracking":
   test "New buffer has all lines unmodified":

@@ -21,9 +21,11 @@
 
 import std/[unittest, options, tables, strutils, os, osproc]
 
-import pkg/celina
+from pkg/celina import nil
+import pkg/results
 
 import ../src/moepkg/[types, modes, registers, buffer, config]
+import ../src/moepkg/celina_render_target
 import ../src/moepkg/syntax/tokenizer
 import ../src/moepkg/status_line {.all.}
 
@@ -60,8 +62,8 @@ proc createTestState(): EditorState =
 
 proc createTestBuffer(): celina.Buffer =
   ## Create a minimal Celina Buffer for testing
-  result = newBuffer(80, 24)
-  result.area = Rect(x: 0, y: 0, width: 80, height: 24)
+  result = celina.newBuffer(80, 24)
+  result.area = celina.Rect(x: 0, y: 0, width: 80, height: 24)
 
 proc createTestTextBuffer(
     filePath: string = "", modified: bool = false, content: string = ""
@@ -101,7 +103,34 @@ proc getBufferLine(buffer: celina.Buffer, y: int): string =
   ## Extract a line from celina Buffer as string
   result = ""
   for x in 0 ..< buffer.area.width:
-    result.add(buffer[x, y].symbol)
+    result.add(celina.`[]`(buffer, x, y).symbol)
+
+proc renderStatusLine(
+    state: EditorState,
+    textBuffer: TextBuffer,
+    buffer: var celina.Buffer,
+    statusLineY: int,
+    config: StatusLineConfig,
+) =
+  var target = initCelinaRenderTarget(buffer)
+  status_line.renderStatusLine(state, textBuffer, target, statusLineY, config)
+
+proc renderWindowStatusLine(
+    state: EditorState,
+    textBuffer: TextBuffer,
+    buffer: var celina.Buffer,
+    statusLineY: int,
+    statusLineX: int,
+    statusLineWidth: int,
+    isActiveWindow: bool,
+    windowMode: EditorMode,
+    config: StatusLineConfig,
+) =
+  var target = initCelinaRenderTarget(buffer)
+  status_line.renderWindowStatusLine(
+    state, textBuffer, target, statusLineY, statusLineX, statusLineWidth,
+    isActiveWindow, windowMode, config,
+  )
 
 suite "StatusLine - toggleStatusLine":
   test "Toggle from true to false":
