@@ -26,9 +26,7 @@
 
 import std/[options, unicode]
 
-import pkg/celina
-
-import types, buffer, color
+import render_types, types, buffer, color
 
 # Sidebar display constants
 const DefaultSidebarWidth* = 2
@@ -113,7 +111,7 @@ proc bookmarkStyle*(): Style =
   getThemeStyle(EditorColorPairIndex.sidebarBookmarkSign, {StyleModifier.Bold})
 
 proc emptyStyle*(): Style =
-  Style(fg: ColorValue(kind: Default), bg: themeBackground(), modifiers: {})
+  Style(fg: defaultColorValue(), bg: themeBackground(), modifiers: {})
 
 proc getStyleForKind(kind: LineMarkerKind): Style =
   ## Get the appropriate style for a sidebar item kind

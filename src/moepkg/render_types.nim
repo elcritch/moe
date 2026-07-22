@@ -1,0 +1,84 @@
+#[###################### GNU General Public License 3.0 ######################]#
+#                                                                              #
+#  Copyright (C) 2017─2026 Shuhei Nogawa                                       #
+#                                                                              #
+#  This program is free software: you can redistribute it and/or modify        #
+#  it under the terms of the GNU General Public License as published by        #
+#  the Free Software Foundation, either version 3 of the License, or           #
+#  (at your option) any later version.                                         #
+#                                                                              #
+#  This program is distributed in the hope that it will be useful,             #
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of              #
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the               #
+#  GNU General Public License for more details.                                #
+#                                                                              #
+#  You should have received a copy of the GNU General Public License           #
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.      #
+#                                                                              #
+#[############################################################################]#
+
+## Frontend-neutral rendering value types.
+##
+## These types describe what moe wants to draw. Concrete frontends translate
+## them to their own drawing primitives at the render-target boundary.
+
+import std/unicode
+
+type
+  ColorValueKind* = enum
+    cvkDefault
+    cvkIndexed256
+    cvkRgb
+
+  RgbColor* = object
+    r*, g*, b*: uint8
+
+  ColorValue* = object
+    case kind*: ColorValueKind
+    of cvkDefault:
+      discard
+    of cvkIndexed256:
+      indexed256*: uint8
+    of cvkRgb:
+      rgb*: RgbColor
+
+  StyleModifier* = enum
+    Bold
+    Dim
+    Italic
+    Underline
+    SlowBlink
+    RapidBlink
+    Reversed
+    Crossed
+    Hidden
+    Undercurl
+    DoubleUnderline
+    DottedUnderline
+    DashedUnderline
+    Overline
+
+  Style* = object
+    fg*, bg*: ColorValue
+    modifiers*: set[StyleModifier]
+
+  RenderCell* = object
+    symbol*: string
+    style*: Style
+
+func defaultColorValue*(): ColorValue {.inline.} =
+  ColorValue(kind: cvkDefault)
+
+func defaultStyle*(): Style {.inline.} =
+  Style(fg: defaultColorValue(), bg: defaultColorValue(), modifiers: {})
+
+proc cell*(
+    symbol: string = " ", style: Style = defaultStyle()
+): RenderCell {.inline.} =
+  RenderCell(symbol: symbol, style: style)
+
+proc cell*(symbol: char, style: Style = defaultStyle()): RenderCell {.inline.} =
+  cell($symbol, style)
+
+proc cell*(symbol: Rune, style: Style = defaultStyle()): RenderCell {.inline.} =
+  cell($symbol, style)

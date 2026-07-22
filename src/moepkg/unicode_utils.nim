@@ -23,14 +23,17 @@
 ## including cursor positioning and character operations.
 
 import std/[unicode, tables]
-import pkg/celina
 
-export buffer.runeWidth, buffer.displayWidth, buffer.foldZeroWidthRune
+from pkg/celina/core/buffer import displayWidth, runeWidth
 
-proc setRuneCell*(buffer: var Buffer, x, y: int, r: Rune, style: Style): int =
+import render_target
+
+export displayWidth, runeWidth
+
+proc setRuneCell*(buffer: var RenderTarget, x, y: int, r: Rune, style: Style): int =
   ## Write a single rune at (x, y), returning its display width so callers can
   ## advance the cursor. Wide chars (width 2) get an empty continuation cell so
-  ## celina's diff repaints the second column when the wide char is overwritten,
+  ## frontends repaint the second column when the wide char is overwritten,
   ## avoiding ghost artifacts on popup close. Zero-width runes (combining marks,
   ## joiners, variation selectors) are folded into the preceding base cell and
   ## return 0 — writing them standalone would overwrite the following glyph.

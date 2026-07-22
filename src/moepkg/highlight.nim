@@ -20,9 +20,7 @@
 import
   std/[sequtils, os, strutils, strformat, unicode, algorithm, options, tables, json]
 
-import pkg/celina
-
-import color, unicode_utils
+import render_types, color, unicode_utils
 import syntax/tokenizer
 import lsp/protocol/types
 
@@ -142,8 +140,7 @@ const
     ## `length`, so a pathological value (e.g. 2^31 from a buggy server) would
     ## otherwise walk every row of the buffer in a full-doc reply.
 
-let defaultStyle* =
-  Style(fg: ColorValue(kind: Default), bg: ColorValue(kind: Default), modifiers: {})
+let defaultStyle* = render_types.defaultStyle()
   ## Default style for highlighting
 
 proc captureTokenizerState*(g: GeneralTokenizer): TokenizerState =
@@ -1856,7 +1853,7 @@ proc buildSemanticTypeColorTable*(
     result.baseColors[i] = semanticTokenTypeToColor(name, @[])
 
 proc semanticModifierStyle(modifiers: seq[string]): set[StyleModifier] =
-  ## Map LSP standard token modifiers to celina text-attribute set. Only the
+  ## Map LSP standard token modifiers to render text-attribute set. Only the
   ## text-attribute modifiers are honoured here; `readonly`/`static` shifts
   ## the base colour instead (see `semanticTokenTypeToColor`).
   for m in modifiers:
@@ -1945,9 +1942,8 @@ proc addOverlayToken(
   ## tokens on the same row; the new token wins over every overlapping prior,
   ## but each overlapping prior keeps its own head (up to `col`) and tail
   ## (past `col + length`) as separate segments so colours don't leak.
-  let tokStyle = Style(
-    fg: ColorValue(kind: Default), bg: ColorValue(kind: Default), modifiers: modifiers
-  )
+  let tokStyle =
+    Style(fg: defaultColorValue(), bg: defaultColorValue(), modifiers: modifiers)
   let newTok = SemanticOverlayToken(
     firstColumn: col, length: length, color: color, style: tokStyle
   )

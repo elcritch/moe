@@ -363,7 +363,7 @@ proc getWrapCount*(
   cache.ensureFresh(buffer, maxWidth, tabStop)
   cache.cachedWrapCount(buffer, line)
 
-proc clearBuffer*(buffer: var Buffer) =
+proc clearBuffer*(buffer: var RenderTarget) =
   ## Clear the entire buffer to prevent rendering artifacts
   ## Uses the theme's default background color for consistent appearance
   let clearStyle = normalStyle()

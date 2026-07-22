@@ -26,11 +26,11 @@
 
 import std/unicode
 
-import pkg/celina
+import render_target, unicode_utils
 
-import unicode_utils
-
-proc drawBorder*(termBuffer: var Buffer, x, y, width, height: int, style: Style) =
+proc drawBorder*(
+    termBuffer: var RenderTarget, x, y, width, height: int, style: Style
+) =
   ## Draw a single-cell box border at (x, y) spanning width × height, clipped to
   ## the buffer. The interior (content) area is the (height - 2) rows between the
   ## top and bottom edges. Corners use ┌ ┐ └ ┘ and edges use ─ │.
@@ -69,7 +69,7 @@ proc drawBorder*(termBuffer: var Buffer, x, y, width, height: int, style: Style)
     put(right, bottom, "┘")
 
 proc drawClippedRunes*(
-    termBuffer: var Buffer, startX, y, limitX: int, text: string, style: Style
+    termBuffer: var RenderTarget, startX, y, limitX: int, text: string, style: Style
 ): int =
   ## Emit the runes of `text` left-to-right starting at column startX on row y,
   ## stopping before limitX (and the buffer's right edge). Wide characters write
@@ -86,7 +86,9 @@ proc drawClippedRunes*(
     else:
       result += w
 
-proc fillCells*(termBuffer: var Buffer, startX, y, limitX: int, style: Style): int =
+proc fillCells*(
+    termBuffer: var RenderTarget, startX, y, limitX: int, style: Style
+): int =
   ## Fill columns [startX, limitX) on row y with spaces in the given style,
   ## clipped to the buffer. Returns the next column.
   result = startX

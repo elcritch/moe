@@ -72,7 +72,7 @@ proc renderTabLine*(
     buffers: seq[TextBuffer],
     activeBuffer: TextBuffer,
     mode: EditorMode,
-    displayBuffer: var Buffer,
+    displayBuffer: var RenderTarget,
     tabLineY: int,
     tabLineX: int,
     tabLineWidth: int,
@@ -148,7 +148,7 @@ proc renderWindowTabLine*(
     buffers: seq[TextBuffer],
     windowActiveBuffer: TextBuffer,
     mode: EditorMode,
-    displayBuffer: var Buffer,
+    displayBuffer: var RenderTarget,
     windowY: int,
     windowX: int,
     windowWidth: int,
@@ -178,7 +178,7 @@ proc renderSingleViewTabLine*(
     buffers: seq[TextBuffer],
     activeBuffer: TextBuffer,
     mode: EditorMode,
-    displayBuffer: var Buffer,
+    displayBuffer: var RenderTarget,
     showTabLine: bool,
 ) =
   ## Render tab line for single view mode

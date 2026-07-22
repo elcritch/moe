@@ -179,12 +179,12 @@ proc newLineStyleContext*(
 # them in order so the priority list reads as a sequence of named checks.
 
 template matchesVisualSelection(
-    e: Editor, hasSelection: bool, pos: BufferPosition
+    e: Editor, hasSelection: bool, pos: RenderTargetPosition
 ): bool =
   hasSelection and e.state.visualSelection.isPositionInSelection(pos)
 
 template matchesSnippetStop(
-    e: Editor, lineCtx: LineStyleContext, pos: BufferPosition
+    e: Editor, lineCtx: LineStyleContext, pos: RenderTargetPosition
 ): bool =
   ## The pending (still selected) default range of the active snippet
   ## tabstop. Anchored to the active window's session; defaults are
@@ -201,7 +201,7 @@ template matchesSnippetStop(
   )
 
 template matchesMatchingParen(
-    e: Editor, lineCtx: LineStyleContext, pos: BufferPosition
+    e: Editor, lineCtx: LineStyleContext, pos: RenderTargetPosition
 ): bool =
   # `matchingParenPos` is derived from the active window's cursor, so the
   # highlight must only be drawn in the active window — other windows may
@@ -211,7 +211,7 @@ template matchesMatchingParen(
     e.state.matchingParenPos.get.column == pos.column
 
 template matchesFindCharMatch(
-    e: Editor, lineCtx: LineStyleContext, pos: BufferPosition
+    e: Editor, lineCtx: LineStyleContext, pos: RenderTargetPosition
 ): bool =
   # Like matchingParen, f/F/t/T match candidates are anchored to the active
   # window's cursor line; never paint them in inactive windows.
@@ -220,11 +220,11 @@ template matchesFindCharMatch(
     pos.column in e.state.ui.findCharMatches
 
 template matchesCurrentWord(
-    e: Editor, lineCtx: LineStyleContext, pos: BufferPosition
+    e: Editor, lineCtx: LineStyleContext, pos: RenderTargetPosition
 ): bool =
   not e.state.isSearchOverlay and lineCtx.wordRanges.isColumnInRanges(pos.column)
 
-template matchesSearchHighlight(lineCtx: LineStyleContext, pos: BufferPosition): bool =
+template matchesSearchHighlight(lineCtx: LineStyleContext, pos: RenderTargetPosition): bool =
   lineCtx.searchRanges.isColumnInRanges(pos.column)
 
 template gitConflictApplies(lineCtx: LineStyleContext): bool =
@@ -238,7 +238,7 @@ template cursorColumnApplies(e: Editor, displayCol: int, cursorDisplayCol: int):
 
 proc overlayPatchSyntax(
     e: Editor,
-    pos: BufferPosition,
+    pos: RenderTargetPosition,
     lineCtx: LineStyleContext,
     displayCol: int,
     cursorDisplayCol: int,
@@ -264,7 +264,7 @@ proc overlayPatchSyntax(
 proc baseStyleWithOverlay(
     e: Editor,
     buffer: TextBuffer,
-    pos: BufferPosition,
+    pos: RenderTargetPosition,
     windowMode: EditorMode,
     displayCol: int,
     cursorDisplayCol: int,
@@ -296,7 +296,7 @@ proc getSelectionStyle*(
     e: Editor,
     buffer: TextBuffer,
     hasSelection: bool,
-    pos: BufferPosition,
+    pos: RenderTargetPosition,
     cursorCol: int,
     windowMode: EditorMode,
     lineCtx: LineStyleContext,
@@ -336,7 +336,7 @@ proc getSelectionStyle*(
 
 proc getVisualSelection*(
     e: Editor, windowMode: EditorMode, windowActive: bool = true
-): tuple[hasSelection: bool, selStart, selEnd: BufferPosition] =
+): tuple[hasSelection: bool, selStart, selEnd: RenderTargetPosition] =
   ## Get visual selection range if active
   ## windowMode: The mode of the window being rendered
   ## windowActive: only show selection in active window (default true for compatibility)
@@ -349,8 +349,8 @@ proc getVisualSelection*(
   else:
     result = (
       hasSelection: false,
-      selStart: BufferPosition(line: 0, column: 0),
-      selEnd: BufferPosition(line: 0, column: 0),
+      selStart: RenderTargetPosition(line: 0, column: 0),
+      selEnd: RenderTargetPosition(line: 0, column: 0),
     )
 
 proc shouldShowIndentationGuide*(
@@ -425,7 +425,7 @@ proc lineFillPatch(
 
 proc fillLineBackground*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     screenX, screenY: int,
     lineIndex, cursorLine: int,
     windowRightEdge: int,
@@ -466,7 +466,7 @@ proc fillLineBackground*(
 
 proc appendEndOfLineVirtualText(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     ctx: RenderContext,
     lineCtx: LineStyleContext,
     startDisplayX, screenX, screenY: int,
@@ -512,7 +512,7 @@ proc appendEndOfLineVirtualText(
 proc renderLineSegmentWithSelection*(
     e: Editor,
     textBuffer: TextBuffer,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     displayLine: string,
     screenX, screenY: int,
     lineIndex: int,
@@ -662,7 +662,7 @@ proc fmtLineNum(
 
 proc renderWindowLineWrapped*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     lineNumOffset: int,
     ctx: RenderContext,
@@ -825,7 +825,7 @@ proc renderWindowLineWrapped*(
 
 proc renderWindowLineNoWrap*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     lineNumOffset: int,
     ctx: RenderContext,
@@ -926,7 +926,7 @@ proc renderWindowLineNoWrap*(
       )
 
 proc renderWindowSidebar*(
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     sidebar: Sidebar,
     screenY: int,
@@ -948,7 +948,7 @@ proc renderWindowSidebar*(
 
 proc renderFoldLine*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     lineNumOffset: int,
     screenY: int,
@@ -1038,7 +1038,7 @@ proc walkDisplayRows(
 
 proc renderScrollbar*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     visibleHeight: int,
     tabLineOffset: int,
@@ -1102,7 +1102,7 @@ proc renderScrollbar*(
 
 proc renderWindow*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     lineNumOffset: int,
     isBottomWindow: bool,
@@ -1247,7 +1247,7 @@ proc renderWindow*(
 
 proc renderWindowSeparator*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     nextWindow: EditorWindow,
     isBottomWindow: bool,

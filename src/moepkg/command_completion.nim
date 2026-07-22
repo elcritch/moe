@@ -535,7 +535,7 @@ proc calculateCommandPopupPosition*(
   CommandPopupPosition(x: x, y: max(0, y), width: popupWidth, height: popupHeight)
 
 proc renderCommandCompletionPopup*(
-    termBuffer: var Buffer,
+    termBuffer: var RenderTarget,
     menu: CommandCompletionMenu,
     pos: CommandPopupPosition,
     showBorder: bool = true,

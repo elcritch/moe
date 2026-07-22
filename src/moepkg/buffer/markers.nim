@@ -21,8 +21,7 @@
 
 import std/[options, algorithm]
 
-import pkg/celina
-
+import ../render_types
 import ../highlight
 import ./core
 

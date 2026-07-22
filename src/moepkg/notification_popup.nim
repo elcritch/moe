@@ -237,7 +237,7 @@ proc calculateNotificationPositions*(
 
     stackOffset += popupHeight + 1 # +1 for gap between popups
 
-proc renderNotificationPopup*(termBuffer: var Buffer, rect: NotificationRect) =
+proc renderNotificationPopup*(termBuffer: var RenderTarget, rect: NotificationRect) =
   let item = rect.item
   let pos = rect
   let contentStyle = getContentStyle(item.level)

@@ -199,7 +199,7 @@ proc calculateSignatureHelpPosition*(
   SignatureHelpPopupPosition(x: x, y: y, width: popupWidth, height: popupHeight)
 
 proc renderSignatureHelpPopup*(
-    termBuffer: var Buffer,
+    termBuffer: var RenderTarget,
     display: SignatureHelpDisplay,
     pos: SignatureHelpPopupPosition,
     showBorder: bool = true,

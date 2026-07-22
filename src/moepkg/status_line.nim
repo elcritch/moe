@@ -573,7 +573,7 @@ proc buildRightSideInfo(
 proc renderStatusLine*(
     state: EditorState,
     textBuffer: TextBuffer,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     statusLineY: int,
     config: StatusLineConfig,
 ) =
@@ -664,7 +664,7 @@ proc renderStatusLine*(
 proc renderWindowStatusLine*(
     state: EditorState,
     textBuffer: TextBuffer,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     statusLineY: int,
     statusLineX: int,
     statusLineWidth: int,

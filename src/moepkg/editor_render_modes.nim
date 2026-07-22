@@ -35,7 +35,7 @@ import terminal/ansi_parser
 
 proc renderConfig*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     isBottomWindow: bool,
     tabLineOffset: int,
@@ -288,7 +288,7 @@ proc terminalCellToStyle(cell: TerminalCell): Style =
 
 proc renderTerminal*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     isBottomWindow: bool,
     tabLineOffset: int,

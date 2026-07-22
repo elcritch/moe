@@ -237,7 +237,7 @@ proc calculateHoverPopupPosition*(
   HoverPopupPosition(x: x, y: y, width: popupWidth, height: popupHeight)
 
 proc renderHoverPopup*(
-    termBuffer: var Buffer,
+    termBuffer: var RenderTarget,
     mgr: HoverPopupManager,
     pos: HoverPopupPosition,
     showBorder: bool = true,

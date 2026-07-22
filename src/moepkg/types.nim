@@ -19,9 +19,8 @@
 
 import std/[options, monotimes, times, tables, strutils]
 
-import pkg/celina
-
 import
+  render_types,
   modes,
   buffer,
   types/registers_types,

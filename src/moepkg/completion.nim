@@ -302,7 +302,7 @@ proc collectWordSet(
         result.incl(word)
 
 proc collectBufferWords*(
-    buffer: TextBuffer, excludePos: BufferPosition, otherBuffers: seq[TextBuffer] = @[]
+    buffer: TextBuffer, excludePos: RenderTargetPosition, otherBuffers: seq[TextBuffer] = @[]
 ): seq[string] =
   ## Collect all unique words from the current buffer and other open buffers.
   ## Excludes the word at the current cursor position. Order is unspecified;
@@ -1000,7 +1000,7 @@ proc calculatePopupPosition*(
   PopupPosition(x: x, y: y, width: popupWidth, height: popupHeight)
 
 proc renderCompletionPopup*(
-    termBuffer: var Buffer,
+    termBuffer: var RenderTarget,
     menu: CompletionMenu,
     pos: PopupPosition,
     showBorder: bool = true,
@@ -1150,7 +1150,7 @@ proc calculateDocPanelPosition*(
 
   PopupPosition(x: x, y: y, width: popupWidth, height: popupHeight)
 
-proc renderDocPanel*(termBuffer: var Buffer, docPanel: DocPanel, pos: PopupPosition) =
+proc renderDocPanel*(termBuffer: var RenderTarget, docPanel: DocPanel, pos: PopupPosition) =
   ## Render documentation panel to terminal buffer
   if not docPanel.visible or docPanel.lines.len == 0:
     return
