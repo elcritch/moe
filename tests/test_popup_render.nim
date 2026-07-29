@@ -21,9 +21,48 @@
 
 import std/unittest
 
-import pkg/celina
+from pkg/celina import nil
 
+import ../src/moepkg/celina_render_target
 import ../src/moepkg/popup_render
+import ../src/moepkg/render_target as rt
+import render_target_test_helper
+
+proc newBuffer(width, height: int): celina.Buffer {.inline.} =
+  celina.newBuffer(width, height)
+
+proc defaultStyle(): rt.Style {.inline.} =
+  rt.defaultStyle()
+
+proc cell(symbol: string, style: rt.Style): celina.Cell {.inline.} =
+  celina.cell(symbol, style.toCelinaStyle)
+
+proc `[]`(buffer: celina.Buffer, x, y: int): celina.Cell {.inline.} =
+  celina.`[]`(buffer, x, y)
+
+proc `[]=`(buffer: var celina.Buffer, x, y: int, cell: celina.Cell) {.inline.} =
+  celina.`[]=`(buffer, x, y, cell)
+
+proc isShadow(cell: celina.Cell): bool {.inline.} =
+  celina.isShadow(cell)
+
+proc drawClippedRunes(
+    termBuffer: var celina.Buffer, startX, y, limitX: int, text: string, style: rt.Style
+): int =
+  var target = initCelinaRenderTarget(termBuffer)
+  popup_render.drawClippedRunes(target, startX, y, limitX, text, style)
+
+proc drawBorder(
+    termBuffer: var celina.Buffer, x, y, width, height: int, style: rt.Style
+) =
+  var target = initCelinaRenderTarget(termBuffer)
+  popup_render.drawBorder(target, x, y, width, height, style)
+
+proc fillCells(
+    termBuffer: var celina.Buffer, startX, y, limitX: int, style: rt.Style
+): int =
+  var target = initCelinaRenderTarget(termBuffer)
+  popup_render.fillCells(target, startX, y, limitX, style)
 
 suite "popup_render - drawClippedRunes":
   test "ASCII within limit writes every rune and returns end column":

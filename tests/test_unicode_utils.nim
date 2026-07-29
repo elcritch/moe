@@ -19,11 +19,27 @@
 
 import std/[unittest, unicode]
 
-import pkg/celina
+from pkg/celina import nil
 
 import ../src/moepkg/[unicode_utils, render_utils]
-import ../src/moepkg/buffer/[core, edit]
+import ../src/moepkg/buffer/core
+import ../src/moepkg/celina_render_target
 import ../src/moepkg/buffer_backends/gap_buffer
+import ../src/moepkg/render_target as rt
+import render_target_test_helper
+
+proc newBuffer(width, height: int): celina.Buffer {.inline.} =
+  celina.newBuffer(width, height)
+
+proc defaultStyle(): rt.Style {.inline.} =
+  rt.defaultStyle()
+
+proc `[]`(buffer: celina.Buffer, x, y: int): celina.Cell {.inline.} =
+  celina.`[]`(buffer, x, y)
+
+proc setRuneCell(buffer: var celina.Buffer, x, y: int, r: Rune, style: rt.Style): int =
+  var target = initCelinaRenderTarget(buffer)
+  unicode_utils.setRuneCell(target, x, y, r, style)
 
 suite "GapBuffer - Unicode Support":
   test "Create buffer with Japanese text":
@@ -857,13 +873,13 @@ suite "unicode_utils - setRuneCell":
     check buf[1, 0].symbol == "日"
     check buf[2, 0].symbol == ""
 
-  test "Wide rune at exact buffer right edge skips continuation":
+  test "Wide rune at exact buffer right edge is not written":
     var buf = newBuffer(3, 3)
     let style = defaultStyle()
-    # x=2 is the last valid col; x+1=3 is out of bounds - skip continuation
+    # Celina rejects a wide cell when there is no room for its continuation cell.
     let w = setRuneCell(buf, 2, 0, "日".runeAt(0), style)
     check w == 2
-    check buf[2, 0].symbol == "日"
+    check buf[2, 0].symbol == " "
 
   test "Combining mark folds into the preceding base cell, returns width 0":
     var buf = newBuffer(10, 3)

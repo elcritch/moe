@@ -23,9 +23,7 @@
 
 import std/[os, options, times, strutils]
 
-import pkg/celina
-
-import buffer/core, highlight, color, dir_scan
+import buffer/core, highlight, color, dir_scan, render_types
 import syntax/tokenizer
 
 import types/filer_types

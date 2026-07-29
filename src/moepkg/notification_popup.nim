@@ -25,9 +25,7 @@
 
 import std/[strutils, unicode, monotimes, times]
 
-import pkg/celina
-
-import color, popup_render, unicode_utils
+import color, popup_render, unicode_utils, render_target
 
 type
   NotificationLevel* = enum
@@ -239,7 +237,7 @@ proc calculateNotificationPositions*(
 
     stackOffset += popupHeight + 1 # +1 for gap between popups
 
-proc renderNotificationPopup*(termBuffer: var Buffer, rect: NotificationRect) =
+proc renderNotificationPopup*(target: var RenderTarget, rect: NotificationRect) =
   let item = rect.item
   let pos = rect
   let contentStyle = getContentStyle(item.level)
@@ -252,61 +250,61 @@ proc renderNotificationPopup*(termBuffer: var Buffer, rect: NotificationRect) =
   let contentWidth = pos.width - borderOffset * 2 - margin * 2
 
   # Top border
-  if pos.showBorder and pos.y >= 0 and pos.y < termBuffer.area.height:
-    if pos.x >= 0 and pos.x < termBuffer.area.width:
-      termBuffer[pos.x, pos.y] = cell("┌", borderStyle)
-    for x in pos.x + 1 ..< min(pos.x + pos.width - 1, termBuffer.area.width):
+  if pos.showBorder and pos.y >= 0 and pos.y < target.area.height:
+    if pos.x >= 0 and pos.x < target.area.width:
+      target.setCell(pos.x, pos.y, "┌", 1, borderStyle)
+    for x in pos.x + 1 ..< min(pos.x + pos.width - 1, target.area.width):
       if x >= 0:
-        termBuffer[x, pos.y] = cell("─", borderStyle)
-    if pos.x + pos.width - 1 >= 0 and pos.x + pos.width - 1 < termBuffer.area.width:
-      termBuffer[pos.x + pos.width - 1, pos.y] = cell("┐", borderStyle)
+        target.setCell(x, pos.y, "─", 1, borderStyle)
+    if pos.x + pos.width - 1 >= 0 and pos.x + pos.width - 1 < target.area.width:
+      target.setCell(pos.x + pos.width - 1, pos.y, "┐", 1, borderStyle)
 
   # Content lines
   for i in 0 ..< item.lines.len:
     let lineY = contentY + i
-    if lineY < 0 or lineY >= termBuffer.area.height:
+    if lineY < 0 or lineY >= target.area.height:
       continue
 
     let lineText = item.lines[i]
 
     # Left border or space margin
-    if pos.x >= 0 and pos.x < termBuffer.area.width:
+    if pos.x >= 0 and pos.x < target.area.width:
       if pos.showBorder:
-        termBuffer[pos.x, lineY] = cell("│", borderStyle)
+        target.setCell(pos.x, lineY, "│", 1, borderStyle)
       else:
-        termBuffer[pos.x, lineY] = cell(" ", contentStyle)
+        target.setCell(pos.x, lineY, " ", 1, contentStyle)
 
     # Content
     var x = contentX
     for r in lineText.runes:
-      if x >= contentX + contentWidth or x >= termBuffer.area.width:
+      if x >= contentX + contentWidth or x >= target.area.width:
         break
       if x >= 0:
-        x += setRuneCell(termBuffer, x, lineY, r, contentStyle)
+        x += setRuneCell(target, x, lineY, r, contentStyle)
       else:
         x += runeWidth(r)
 
     # Fill remaining space with background
-    while x < contentX + contentWidth and x < termBuffer.area.width:
+    while x < contentX + contentWidth and x < target.area.width:
       if x >= 0:
-        termBuffer[x, lineY] = cell(" ", contentStyle)
+        target.setCell(x, lineY, " ", 1, contentStyle)
       inc x
 
     # Right border / margin
-    if pos.x + pos.width - 1 >= 0 and pos.x + pos.width - 1 < termBuffer.area.width:
+    if pos.x + pos.width - 1 >= 0 and pos.x + pos.width - 1 < target.area.width:
       if pos.showBorder:
-        termBuffer[pos.x + pos.width - 1, lineY] = cell("│", borderStyle)
+        target.setCell(pos.x + pos.width - 1, lineY, "│", 1, borderStyle)
       else:
-        termBuffer[pos.x + pos.width - 1, lineY] = cell(" ", contentStyle)
+        target.setCell(pos.x + pos.width - 1, lineY, " ", 1, contentStyle)
 
   # Bottom border
   if pos.showBorder:
     let bottomY = contentY + item.lines.len
-    if bottomY >= 0 and bottomY < termBuffer.area.height:
-      if pos.x >= 0 and pos.x < termBuffer.area.width:
-        termBuffer[pos.x, bottomY] = cell("└", borderStyle)
-      for x in pos.x + 1 ..< min(pos.x + pos.width - 1, termBuffer.area.width):
+    if bottomY >= 0 and bottomY < target.area.height:
+      if pos.x >= 0 and pos.x < target.area.width:
+        target.setCell(pos.x, bottomY, "└", 1, borderStyle)
+      for x in pos.x + 1 ..< min(pos.x + pos.width - 1, target.area.width):
         if x >= 0:
-          termBuffer[x, bottomY] = cell("─", borderStyle)
-      if pos.x + pos.width - 1 >= 0 and pos.x + pos.width - 1 < termBuffer.area.width:
-        termBuffer[pos.x + pos.width - 1, bottomY] = cell("┘", borderStyle)
+          target.setCell(x, bottomY, "─", 1, borderStyle)
+      if pos.x + pos.width - 1 >= 0 and pos.x + pos.width - 1 < target.area.width:
+        target.setCell(pos.x + pos.width - 1, bottomY, "┘", 1, borderStyle)

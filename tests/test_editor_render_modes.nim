@@ -29,7 +29,10 @@ import
     unicode_utils,
   ]
 import ../src/moepkg/editor_render_modes
+import ../src/moepkg/celina_render_target
+import ../src/moepkg/render_target as rt
 import ../src/moepkg/types/config_mode_types
+import render_target_test_helper
 
 proc createTestEditor(): Editor =
   ## Create a minimal editor for testing
@@ -46,6 +49,16 @@ proc createTestBuffer(): Buffer =
   ## Create a minimal Celina Buffer for testing
   result = newBuffer(80, 24)
   result.area = Rect(x: 0, y: 0, width: 80, height: 24)
+
+proc renderConfig(
+    e: Editor,
+    buffer: var Buffer,
+    window: EditorWindow,
+    isBottomWindow: bool,
+    tabLineOffset: int,
+) =
+  var target = initCelinaRenderTarget(buffer)
+  e.renderConfig(target, window, isBottomWindow, tabLineOffset)
 
 suite "renderConfig - Basic behavior":
   test "Render with no config state does nothing":
@@ -288,7 +301,7 @@ suite "renderConfig - narrow viewport / multibyte":
         e.renderConfig(buffer, e.activeWindow, true, 0)
 
 suite "renderConfig - search highlight with multibyte displayName":
-  proc findHighlightedXs(buffer: Buffer, hlBg: ColorValue): seq[int] =
+  proc findHighlightedXs(buffer: Buffer, hlBg: rt.ColorValue): seq[int] =
     ## Find X positions of all cells drawn with the search highlight background.
     ## Only returns cells on the first screen row that has any highlighted cells.
     for y in 0 ..< buffer.area.height:

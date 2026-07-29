@@ -24,9 +24,9 @@
 
 import std/[options, hashes, unicode]
 
-import pkg/celina
+import pkg/results
 
-import color
+import render_types, color
 
 type
   ColorCodeMatch* = object

@@ -23,24 +23,25 @@
 ## including cursor positioning and character operations.
 
 import std/[unicode, tables]
-import pkg/celina
 
-export buffer.runeWidth, buffer.displayWidth, buffer.foldZeroWidthRune
+from pkg/celina/core/buffer import displayWidth, runeWidth
 
-proc setRuneCell*(buffer: var Buffer, x, y: int, r: Rune, style: Style): int =
+import render_target
+
+export displayWidth, runeWidth
+
+proc setRuneCell*(buffer: var RenderTarget, x, y: int, r: Rune, style: Style): int =
   ## Write a single rune at (x, y), returning its display width so callers can
-  ## advance the cursor. Wide chars (width 2) get an empty continuation cell so
-  ## celina's diff repaints the second column when the wide char is overwritten,
-  ## avoiding ghost artifacts on popup close. Zero-width runes (combining marks,
-  ## joiners, variation selectors) are folded into the preceding base cell and
-  ## return 0 — writing them standalone would overwrite the following glyph.
+  ## advance the cursor. Wide chars are passed to the target with width 2 so the
+  ## frontend can maintain its continuation cell and avoid ghost artifacts when
+  ## the glyph is overwritten. Zero-width runes (combining marks, joiners,
+  ## variation selectors) are folded into the preceding base cell and return 0 —
+  ## writing them standalone would overwrite the following glyph.
   let w = runeWidth(r)
   if w == 0:
     foldZeroWidthRune(buffer, x, y, r)
     return 0
-  buffer[x, y] = cell($r, style)
-  if w == 2 and x + 1 < buffer.area.width:
-    buffer[x + 1, y] = cell("", style)
+  buffer.setCell(x, y, r, w, style)
   return w
 
 proc byteToCharPos*(text: string, bytePos: int): int =

@@ -25,8 +25,6 @@
 
 import std/[options, strutils, monotimes, times, tables]
 
-import pkg/celina
-
 import
   types/editor_types,
   editor_reload,
@@ -46,7 +44,7 @@ import
 import
   git_cache, render_utils, logger, message_log, debug_viewer, completion,
   signature_help, hover_popup, unicode_utils, motion, buffer, lsp_integration,
-  editor_window_layout
+  editor_window_layout, render_target
 
 proc shutdown*(e: Editor) =
   ## Shutdown editor and clean up resources (including LSP servers)
@@ -360,7 +358,7 @@ proc tick*(e: Editor) =
   e.tickAutoSave()
   e.tickNotifications()
 
-proc updateForFrame*(e: Editor, buffer: Buffer): bool =
+proc updateForFrame*(e: Editor, buffer: RenderTarget): bool =
   ## Advance per-frame editor state: smooth-scroll animation, fold cursor pin,
   ## matching-paren / current-word, syntax + semantic highlight, viewport size,
   ## and window layout (viewport scroll, selection-cursor sync, screen cursor).
@@ -430,14 +428,14 @@ proc updateForFrame*(e: Editor, buffer: Buffer): bool =
   result = e.updateViewportSize(buffer)
   e.advanceLayoutForFrame(buffer, result)
 
-proc renderMainContent(e: Editor, buffer: var Buffer) =
+proc renderMainContent(e: Editor, buffer: var RenderTarget) =
   ## Paint the main editor view (always uses split view since we always have at
   ## least one window). Read-only.
   e.renderSplitView(buffer)
   e.renderBottomLines(buffer)
   e.renderTempMessages(buffer)
 
-proc renderOverlays(e: Editor, buffer: var Buffer) =
+proc renderOverlays(e: Editor, buffer: var RenderTarget) =
   ## Render overlay popups (completion, signature help, CodeLens picker, hover popup).
 
   if e.state.mode == EditorMode.Insert:
@@ -525,7 +523,7 @@ proc renderOverlays(e: Editor, buffer: var Buffer) =
     for rect in rects:
       renderNotificationPopup(buffer, rect)
 
-proc draw(e: Editor, buffer: var Buffer) =
+proc draw(e: Editor, buffer: var RenderTarget) =
   ## Read-only projection of editor state onto the render buffer. The only state
   ## writes remaining in the draw are the idempotent, draw-side exceptions of
   ## Config (cursor placement + its own list scroll via ensureSelectedVisible)
@@ -538,7 +536,7 @@ proc draw(e: Editor, buffer: var Buffer) =
 
   e.renderOverlays(buffer)
 
-proc render*(e: Editor, buffer: var Buffer) =
+proc render*(e: Editor, buffer: var RenderTarget) =
   ## Main render procedure: background processing (`tick`), per-frame state
   ## advancement (`updateForFrame`), then a read-only draw (`draw`).
   if buffer.area.width <= 0 or buffer.area.height <= 0:

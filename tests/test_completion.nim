@@ -21,8 +21,22 @@ import std/[unittest, options, strutils, monotimes, times, json, os]
 
 import pkg/celina
 
-import ../src/moepkg/[buffer, completion, unicode_utils]
+import ../src/moepkg/[buffer, celina_render_target, completion, unicode_utils]
 import ../src/moepkg/lsp/protocol/types as lspTypes
+import render_target_test_helper
+
+proc renderCompletionPopup(
+    termBuffer: var Buffer,
+    menu: CompletionMenu,
+    pos: PopupPosition,
+    showBorder: bool = true,
+) =
+  var target = initCelinaRenderTarget(termBuffer)
+  renderCompletionPopup(target, menu, pos, showBorder)
+
+proc renderDocPanel(termBuffer: var Buffer, docPanel: DocPanel, pos: PopupPosition) =
+  var target = initCelinaRenderTarget(termBuffer)
+  renderDocPanel(target, docPanel, pos)
 
 suite "Completion - extractWords":
   test "Extract words from simple line":

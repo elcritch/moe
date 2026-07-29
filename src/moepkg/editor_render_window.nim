@@ -21,8 +21,6 @@
 
 import std/[options, strutils, unicode, tables]
 
-import pkg/celina
-
 import
   types/editor_types,
   editor_window_layout,
@@ -42,7 +40,8 @@ import
   editor_codelens,
   virtual_text,
   command_line,
-  buffer
+  buffer,
+  render_target
 import command_handlers/visual_handler
 
 type
@@ -115,7 +114,7 @@ proc resolveLineBg(
   if not e.showSyntax or textBuffer == nil or not textBuffer.isCodeBlockLine(lineIndex):
     return none(ColorValue)
   let bg = getThemeStyle(EditorColorPairIndex.markdownCodeBlock).bg
-  if bg.kind != Default:
+  if bg.kind != cvkDefault:
     some(bg)
   else:
     none(ColorValue)
@@ -470,7 +469,7 @@ proc lineFillPatch(
 
 proc fillLineBackground*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     screenX, screenY: int,
     lineIndex, cursorLine: int,
     windowRightEdge: int,
@@ -512,7 +511,7 @@ proc fillLineBackground*(
 
 proc appendEndOfLineVirtualText(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     ctx: RenderContext,
     lineCtx: LineStyleContext,
     startDisplayX, screenX, screenY: int,
@@ -558,7 +557,7 @@ proc appendEndOfLineVirtualText(
 proc renderLineSegmentWithSelection*(
     e: Editor,
     textBuffer: TextBuffer,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     displayLine: string,
     screenX, screenY: int,
     lineIndex: int,
@@ -710,7 +709,7 @@ proc fmtLineNum(
 
 proc renderWindowLineWrapped*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     lineNumOffset: int,
     ctx: RenderContext,
@@ -872,7 +871,7 @@ proc renderWindowLineWrapped*(
 
 proc renderWindowLineNoWrap*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     lineNumOffset: int,
     ctx: RenderContext,
@@ -972,7 +971,7 @@ proc renderWindowLineNoWrap*(
       )
 
 proc renderWindowSidebar*(
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     sidebar: Sidebar,
     screenY: int,
@@ -994,7 +993,7 @@ proc renderWindowSidebar*(
 
 proc renderFoldLine*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     lineNumOffset: int,
     screenY: int,
@@ -1044,7 +1043,7 @@ proc rowLayoutOf(e: Editor, window: EditorWindow, lineNumOffset: int): RowLayout
 
 proc renderScrollbar*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     visibleHeight: int,
     tabLineOffset: int,
@@ -1101,7 +1100,7 @@ proc renderScrollbar*(
 
 proc renderWindow*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     lineNumOffset: int,
     isBottomWindow: bool,
@@ -1226,7 +1225,7 @@ proc renderWindow*(
 
 proc renderWindowSeparator*(
     e: Editor,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     window: EditorWindow,
     nextWindow: EditorWindow,
     isBottomWindow: bool,

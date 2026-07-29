@@ -23,7 +23,14 @@ import std/[unittest, monotimes, times]
 
 import pkg/celina
 
-import ../src/moepkg/[notification_popup, color, theme, unicode_utils]
+import
+  ../src/moepkg/[celina_render_target, notification_popup, color, theme, unicode_utils]
+import ../src/moepkg/render_types
+import render_target_test_helper
+
+proc renderNotificationPopup(termBuffer: var Buffer, rect: NotificationRect) =
+  var target = initCelinaRenderTarget(termBuffer)
+  notification_popup.renderNotificationPopup(target, rect)
 
 # Initialize theme colors for tests
 setThemeColors(DefaultColors)

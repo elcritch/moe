@@ -24,11 +24,9 @@
 
 import std/[algorithm, strutils, unicode, tables, os]
 
-import pkg/celina
-
 import
   command_line, command_line_commands, fuzzy_match, help_description, setting_options,
-  popup_render, color, unicode_utils
+  popup_render, color, unicode_utils, render_target
 
 import types/command_completion_types
 export command_completion_types
@@ -530,7 +528,7 @@ proc calculateCommandPopupPosition*(
   CommandPopupPosition(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
 
 proc renderCommandCompletionPopup*(
-    termBuffer: var Buffer,
+    target: var RenderTarget,
     menu: CommandCompletionMenu,
     pos: CommandPopupPosition,
     showBorder: bool = true,
@@ -561,14 +559,14 @@ proc renderCommandCompletionPopup*(
 
   # Draw border if enabled
   if showBorder:
-    drawBorder(termBuffer, pos.x, pos.y, pos.width, pos.height, cmdPopupBorderStyle())
+    drawBorder(target, pos.x, pos.y, pos.width, pos.height, cmdPopupBorderStyle())
 
   # Content (command + aligned description columns)
   let maxCmdWidth = calculateMaxCommandWidth(menu.entries)
   let contentLimit = contentX + contentWidth
   for i in 0 ..< contentHeight:
     let y = contentY + i
-    if y >= 0 and y < termBuffer.area.height:
+    if y >= 0 and y < target.area.height:
       let entryIdx = menu.scrollOffset + i
       if entryIdx < menu.entries.len:
         let entry = menu.entries[entryIdx]
@@ -592,11 +590,11 @@ proc renderCommandCompletionPopup*(
 
         # Draw command
         var x =
-          drawClippedRunes(termBuffer, contentX, y, contentLimit, displayCmd, cmdStyle)
+          drawClippedRunes(target, contentX, y, contentLimit, displayCmd, cmdStyle)
 
         # Pad command to max width for alignment
         let cmdEndX = contentX + min(maxCmdWidth, cmdDisplayWidth) + DescriptionGap
-        x = fillCells(termBuffer, x, y, min(cmdEndX, contentLimit), cmdStyle)
+        x = fillCells(target, x, y, min(cmdEndX, contentLimit), cmdStyle)
 
         # Draw description if available (display-width safe, remainingWidth <= 0 safe)
         if entry.description.len > 0:
@@ -604,7 +602,7 @@ proc renderCommandCompletionPopup*(
           var displayDesc = entry.description
           if displayDesc.displayWidth > remainingWidth:
             displayDesc = truncateToWidthWithSuffix(displayDesc, remainingWidth, "…")
-          x = drawClippedRunes(termBuffer, x, y, contentLimit, displayDesc, descStyle)
+          x = drawClippedRunes(target, x, y, contentLimit, displayDesc, descStyle)
 
         # Fill remaining space with background
-        x = fillCells(termBuffer, x, y, contentLimit, cmdStyle)
+        x = fillCells(target, x, y, contentLimit, cmdStyle)

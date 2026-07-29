@@ -24,9 +24,8 @@
 ## improve modularity and prepare for additional rendering features.
 
 import std/unicode
-import pkg/celina
 
-import types, buffer/core, unicode_utils, color, modes, sidebar
+import types, buffer/core, unicode_utils, color, modes, sidebar, render_target
 
 # Rendering constants
 const
@@ -370,14 +369,14 @@ proc getWrapCount*(
   cache.ensureFresh(buffer, maxWidth, tabStop)
   cache.cachedWrapCount(buffer, line)
 
-proc clearBuffer*(buffer: var Buffer) =
+proc clearBuffer*(buffer: var RenderTarget) =
   ## Clear the entire buffer to prevent rendering artifacts
   ## Uses the theme's default background color for consistent appearance
   let clearStyle = normalStyle()
 
   for y in 0 ..< buffer.area.height:
     for x in 0 ..< buffer.area.width:
-      buffer[x, y] = cell(" ", clearStyle)
+      buffer.setCell(x, y, " ", 1, clearStyle)
 
 # Layout calculation functions
 

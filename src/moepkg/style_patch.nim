@@ -32,7 +32,7 @@
 
 import std/options
 
-import pkg/celina
+import render_types
 
 type StylePatch* = object
   fg*: Option[ColorValue]

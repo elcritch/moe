@@ -24,7 +24,16 @@ import std/unittest
 import pkg/celina
 
 import ../src/moepkg/hover_popup {.all.}
-import ../src/moepkg/[color, theme]
+import ../src/moepkg/[celina_render_target, color, render_target, theme]
+
+proc renderHoverPopup(
+    termBuffer: var Buffer,
+    mgr: HoverPopupManager,
+    pos: HoverPopupPosition,
+    showBorder: bool = true,
+) =
+  var target = initCelinaRenderTarget(termBuffer)
+  renderHoverPopup(target, mgr, pos, showBorder)
 
 suite "HoverPopup - newHoverPopupManager":
   test "Creates manager with idle state":

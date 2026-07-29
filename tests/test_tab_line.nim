@@ -21,10 +21,11 @@
 
 import std/[unittest, options, tables, strutils]
 
-import pkg/celina
+from pkg/celina import nil
 
 import ../src/moepkg/[types, config, modes, registers, unicode_utils]
 import ../src/moepkg/buffer/core
+import ../src/moepkg/celina_render_target
 import ../src/moepkg/tab_line {.all.}
 
 proc createTestState(): EditorState =
@@ -60,8 +61,8 @@ proc createTestState(): EditorState =
 
 proc createTestBuffer(): celina.Buffer =
   ## Create a minimal Celina Buffer for testing
-  result = newBuffer(80, 24)
-  result.area = Rect(x: 0, y: 0, width: 80, height: 24)
+  result = celina.newBuffer(80, 24)
+  result.area = celina.Rect(x: 0, y: 0, width: 80, height: 24)
 
 proc createTestTextBuffer(filePath: string = "", modified: bool = false): TextBuffer =
   ## Create a TextBuffer for testing with optional file path
@@ -76,7 +77,51 @@ proc getBufferLine(buffer: celina.Buffer, y: int): string =
   ## Extract a line from celina Buffer as string
   result = ""
   for x in 0 ..< buffer.area.width:
-    result.add(buffer[x, y].symbol)
+    result.add(celina.`[]`(buffer, x, y).symbol)
+
+proc renderTabLine(
+    buffers: seq[TextBuffer],
+    activeBuffer: TextBuffer,
+    mode: EditorMode,
+    displayBuffer: var celina.Buffer,
+    tabLineY: int,
+    tabLineX: int,
+    tabLineWidth: int,
+    showTabLine: bool,
+    isActiveWindow: bool = true,
+) =
+  var target = initCelinaRenderTarget(displayBuffer)
+  tab_line.renderTabLine(
+    buffers, activeBuffer, mode, target, tabLineY, tabLineX, tabLineWidth, showTabLine,
+    isActiveWindow,
+  )
+
+proc renderWindowTabLine(
+    buffers: seq[TextBuffer],
+    windowActiveBuffer: TextBuffer,
+    mode: EditorMode,
+    displayBuffer: var celina.Buffer,
+    windowY: int,
+    windowX: int,
+    windowWidth: int,
+    showTabLine: bool,
+    isActiveWindow: bool,
+) =
+  var target = initCelinaRenderTarget(displayBuffer)
+  tab_line.renderWindowTabLine(
+    buffers, windowActiveBuffer, mode, target, windowY, windowX, windowWidth,
+    showTabLine, isActiveWindow,
+  )
+
+proc renderSingleViewTabLine(
+    buffers: seq[TextBuffer],
+    activeBuffer: TextBuffer,
+    mode: EditorMode,
+    displayBuffer: var celina.Buffer,
+    showTabLine: bool,
+) =
+  var target = initCelinaRenderTarget(displayBuffer)
+  tab_line.renderSingleViewTabLine(buffers, activeBuffer, mode, target, showTabLine)
 
 suite "TabLine - toggleTabLine":
   test "Toggle from false to true":

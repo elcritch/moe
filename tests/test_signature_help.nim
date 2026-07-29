@@ -25,7 +25,18 @@ import pkg/celina
 
 import ../src/moepkg/signature_help {.all.}
 import ../src/moepkg/lsp/protocol/types as lspTypes
-import ../src/moepkg/[color, theme]
+import ../src/moepkg/[celina_render_target, color, theme]
+import ../src/moepkg/render_target as rt
+import render_target_test_helper
+
+proc renderSignatureHelpPopup(
+    termBuffer: var Buffer,
+    display: SignatureHelpDisplay,
+    pos: SignatureHelpPopupPosition,
+    showBorder: bool = true,
+) =
+  var target = initCelinaRenderTarget(termBuffer)
+  renderSignatureHelpPopup(target, display, pos, showBorder)
 
 proc createSignatureHelp(
     label: string,
@@ -372,7 +383,7 @@ suite "SignatureHelp - styles":
     initDefaultTheme()
     check signatureHelpHighlightStyle() ==
       getThemeStyle(
-        EditorColorPairIndex.popupWindowActiveParameter, {StyleModifier.Bold}
+        EditorColorPairIndex.popupWindowActiveParameter, {rt.StyleModifier.Bold}
       )
 
   test "signatureHelpBorderStyle uses the popupWindowBorder theme color":

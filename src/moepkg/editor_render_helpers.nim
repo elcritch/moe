@@ -21,12 +21,10 @@
 
 import std/[options, unicode, tables]
 
-import pkg/celina
-
-import types/editor_types, color, render_utils, unicode_utils
+import types/editor_types, render_types, color, render_utils, unicode_utils
 
 proc colorIndexToStyle*(colorIdx: EditorColorPairIndex): Style =
-  ## Convert EditorColorPairIndex to Celina Style using theme colors
+  ## Convert EditorColorPairIndex to render Style using theme colors
   getThemeStyle(colorIdx)
 
 proc isColumnInRanges*(ranges: seq[ColumnRange], col: int): bool {.inline.} =

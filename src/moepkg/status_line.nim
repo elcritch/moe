@@ -19,9 +19,16 @@
 
 import std/[strformat, options, strutils, os, unicode]
 
-import pkg/celina
-
-import types, buffer/core, modes, color, config, git_cache, unicode_utils, highlight
+import
+  types,
+  buffer/core,
+  modes,
+  color,
+  config,
+  git_cache,
+  unicode_utils,
+  highlight,
+  render_target
 import syntax/tokenizer
 
 proc toggleStatusLine*(state: var EditorState) =
@@ -370,7 +377,7 @@ proc buildRightSideInfo(
 proc renderStatusLine*(
     state: EditorState,
     textBuffer: TextBuffer,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     statusLineY: int,
     config: StatusLineConfig,
 ) =
@@ -461,7 +468,7 @@ proc renderStatusLine*(
 proc renderWindowStatusLine*(
     state: EditorState,
     textBuffer: TextBuffer,
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     statusLineY: int,
     statusLineX: int,
     statusLineWidth: int,

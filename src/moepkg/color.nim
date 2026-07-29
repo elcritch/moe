@@ -24,7 +24,9 @@
 
 import std/[strutils, strformat, options, os]
 
-import pkg/[results, celina]
+import pkg/results
+
+import render_types
 
 type
   ColorModeKind* = enum
@@ -915,36 +917,36 @@ proc rgbTo256Color(r, g, b: int16): uint8 =
   return uint8(16 + 36 * ri + 6 * gi + bi)
 
 proc toColorValue*(rgb: Rgb): ColorValue =
-  ## Convert Rgb to celina ColorValue, respecting globalColorMode.
+  ## Convert Rgb to render ColorValue, respecting globalColorMode.
 
   if rgb.isTermDefaultColor:
-    return ColorValue(kind: Default)
+    return ColorValue(kind: cvkDefault)
 
   case globalColorMode
   of cmkNone:
     # No colors - use terminal default
-    return ColorValue(kind: Default)
+    return ColorValue(kind: cvkDefault)
   of cmk8color:
     # Convert to 8 basic ANSI colors
     let index = rgbTo8Color(rgb.red, rgb.green, rgb.blue)
-    return ColorValue(kind: Indexed256, indexed256: index)
+    return ColorValue(kind: cvkIndexed256, indexed256: index)
   of cmk16color:
     # Convert to 16 ANSI colors (includes bright variants)
     let index = rgbTo16Color(rgb.red, rgb.green, rgb.blue)
-    return ColorValue(kind: Indexed256, indexed256: index)
+    return ColorValue(kind: cvkIndexed256, indexed256: index)
   of cmk256color:
     # Convert to 256-color palette
     let index = rgbTo256Color(rgb.red, rgb.green, rgb.blue)
-    return ColorValue(kind: Indexed256, indexed256: index)
+    return ColorValue(kind: cvkIndexed256, indexed256: index)
   of cmk24bit:
     # True color RGB
     return ColorValue(
-      kind: ColorKind.Rgb,
+      kind: cvkRgb,
       rgb: RgbColor(r: rgb.red.uint8, g: rgb.green.uint8, b: rgb.blue.uint8),
     )
 
 proc toStyle*(colorPair: ColorPair): Style =
-  ## Convert ColorPair to celina Style.
+  ## Convert ColorPair to render Style.
 
   result = Style(
     fg: colorPair.foreground.rgb.toColorValue,
@@ -953,7 +955,7 @@ proc toStyle*(colorPair: ColorPair): Style =
   )
 
 proc toStyle*(colorPair: ColorPair, modifiers: set[StyleModifier]): Style =
-  ## Convert ColorPair to celina Style with modifiers.
+  ## Convert ColorPair to render Style with modifiers.
 
   result = Style(
     fg: colorPair.foreground.rgb.toColorValue,
@@ -969,13 +971,13 @@ proc getThemeColor*(index: EditorColorPairIndex): ColorPair {.inline.} =
   themeColors[index]
 
 proc getThemeStyle*(index: EditorColorPairIndex): Style {.inline.} =
-  ## Get celina Style from current theme.
+  ## Get render Style from current theme.
   themeColors[index].toStyle
 
 proc getThemeStyle*(
     index: EditorColorPairIndex, modifiers: set[StyleModifier]
 ): Style {.inline.} =
-  ## Get celina Style from current theme with modifiers.
+  ## Get render Style from current theme with modifiers.
   themeColors[index].toStyle(modifiers)
 
 proc setThemeColors*(colors: ThemeColors) =

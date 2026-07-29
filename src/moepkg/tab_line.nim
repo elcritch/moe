@@ -24,9 +24,7 @@
 
 import std/[options, os, strutils]
 
-import pkg/celina
-
-import types, buffer/core, color, unicode_utils, modes
+import types, buffer/core, color, unicode_utils, modes, render_target
 
 proc toggleTabLine*(state: var EditorState) =
   ## Toggle the visibility of the tab line
@@ -72,7 +70,7 @@ proc renderTabLine*(
     buffers: seq[TextBuffer],
     activeBuffer: TextBuffer,
     mode: EditorMode,
-    displayBuffer: var Buffer,
+    target: var RenderTarget,
     tabLineY: int,
     tabLineX: int,
     tabLineWidth: int,
@@ -85,7 +83,7 @@ proc renderTabLine*(
   ## - buffers: List of all open buffers to display as tabs
   ## - activeBuffer: The currently active buffer (will be highlighted)
   ## - mode: Current editor mode
-  ## - displayBuffer: The screen buffer to render to
+  ## - target: The screen buffer to render to
   ## - tabLineY: Y coordinate for the tab line
   ## - tabLineX: X coordinate for the start of the tab line
   ## - tabLineWidth: Width of the tab line area
@@ -115,14 +113,14 @@ proc renderTabLine*(
       break
 
     # Draw the tab
-    displayBuffer.setString(currentX, tabLineY, tabText, style)
+    target.setString(currentX, tabLineY, tabText, style)
     currentX += tabWidth
 
   # Then fill the remaining space with background (like statusline does)
   let remainingWidth = max(0, tabLineX + tabLineWidth - currentX)
   if remainingWidth > 0:
     let background = " ".repeat(remainingWidth)
-    displayBuffer.setString(currentX, tabLineY, background, tabStyle)
+    target.setString(currentX, tabLineY, background, tabStyle)
 
 proc hitTestTabLine*(
     buffers: seq[TextBuffer],
@@ -148,7 +146,7 @@ proc renderWindowTabLine*(
     buffers: seq[TextBuffer],
     windowActiveBuffer: TextBuffer,
     mode: EditorMode,
-    displayBuffer: var Buffer,
+    target: var RenderTarget,
     windowY: int,
     windowX: int,
     windowWidth: int,
@@ -162,7 +160,7 @@ proc renderWindowTabLine*(
   ## - buffers: List of all open buffers to display as tabs
   ## - windowActiveBuffer: The buffer displayed in this window (will be highlighted)
   ## - mode: Current editor mode
-  ## - displayBuffer: The screen buffer to render to
+  ## - target: The screen buffer to render to
   ## - windowY: Y coordinate of the window (tab line will be at this position)
   ## - windowX: X coordinate of the window
   ## - windowWidth: Width of the window
@@ -170,7 +168,7 @@ proc renderWindowTabLine*(
   ## - isActiveWindow: Whether this window is the active window
 
   renderTabLine(
-    buffers, windowActiveBuffer, mode, displayBuffer, windowY, windowX, windowWidth,
+    buffers, windowActiveBuffer, mode, target, windowY, windowX, windowWidth,
     showTabLine, isActiveWindow,
   )
 
@@ -178,7 +176,7 @@ proc renderSingleViewTabLine*(
     buffers: seq[TextBuffer],
     activeBuffer: TextBuffer,
     mode: EditorMode,
-    displayBuffer: var Buffer,
+    target: var RenderTarget,
     showTabLine: bool,
 ) =
   ## Render tab line for single view mode
@@ -188,10 +186,10 @@ proc renderSingleViewTabLine*(
   ## - buffers: List of all open buffers to display as tabs
   ## - activeBuffer: The currently active buffer (will be highlighted)
   ## - mode: Current editor mode
-  ## - displayBuffer: The screen buffer to render to
+  ## - target: The screen buffer to render to
   ## - showTabLine: Whether the tab line should be shown
 
   renderTabLine(
-    buffers, activeBuffer, mode, displayBuffer, displayBuffer.area.y,
-    displayBuffer.area.x, displayBuffer.area.width, showTabLine,
+    buffers, activeBuffer, mode, target, target.area.y, target.area.x,
+    target.area.width, showTabLine,
   )

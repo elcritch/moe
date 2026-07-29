@@ -27,6 +27,7 @@ import
   ../src/moepkg/
     [editor, config, config_loader, modes, types, buffer, render_utils, editor_window]
 import ../src/moepkg/editor_render_views {.all.}
+import ../src/moepkg/celina_render_target
 
 proc createTestEditor(): Editor =
   ## Create a minimal editor for testing
@@ -41,6 +42,34 @@ proc createTestBuffer(): Buffer =
   ## Create a minimal Celina Buffer for testing
   result = newBuffer(80, 24)
   result.area = Rect(x: 0, y: 0, width: 80, height: 24)
+
+proc updateViewportSize(e: Editor, buffer: var Buffer): bool =
+  var target = initCelinaRenderTarget(buffer)
+  e.updateViewportSize(target)
+
+proc advanceLayoutForFrame(e: Editor, buffer: var Buffer, wasResized: bool) =
+  var target = initCelinaRenderTarget(buffer)
+  e.advanceLayoutForFrame(target, wasResized)
+
+proc renderSplitView(e: Editor, buffer: var Buffer) =
+  var target = initCelinaRenderTarget(buffer)
+  e.renderSplitView(target)
+
+proc renderBottomLines(e: Editor, buffer: var Buffer) =
+  var target = initCelinaRenderTarget(buffer)
+  e.renderBottomLines(target)
+
+proc renderTempMessages(e: Editor, buffer: var Buffer) =
+  var target = initCelinaRenderTarget(buffer)
+  e.renderTempMessages(target)
+
+proc renderCodeLensPicker(e: Editor, buffer: var Buffer) =
+  var target = initCelinaRenderTarget(buffer)
+  e.renderCodeLensPicker(target)
+
+proc clearBuffer(buffer: var Buffer) =
+  var target = initCelinaRenderTarget(buffer)
+  clearBuffer(target)
 
 proc renderSplitView(e: Editor, buffer: var Buffer, wasResized: bool) =
   ## Test shim preserving the pre-M16 call shape. The render pipeline split the

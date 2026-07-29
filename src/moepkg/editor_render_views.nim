@@ -21,8 +21,6 @@
 
 import std/[options, strutils, unicode]
 
-import pkg/celina
-
 import
   types/editor_types,
   editor_window,
@@ -38,7 +36,8 @@ import
   command_completion,
   color,
   window_manager,
-  popup_render
+  popup_render,
+  render_target
 
 type WindowLayout = object
   ## Per-frame layout metrics for a window. A pure, idempotent projection of
@@ -53,7 +52,7 @@ type WindowLayout = object
   effectiveLineWrap: bool
   renderMode: EditorMode
 
-proc updateViewportSize*(e: Editor, buffer: Buffer): bool =
+proc updateViewportSize*(e: Editor, buffer: RenderTarget): bool =
   ## Update screen size from buffer area and return true if resized.
   ## Uses e.screenSize (not e.viewport) to avoid overwriting the active
   ## window's viewport dimensions in split mode.
@@ -208,7 +207,7 @@ proc computeWindowLayout(
     renderMode: renderMode,
   )
 
-proc advanceLayoutForFrame*(e: Editor, buffer: Buffer, wasResized: bool) =
+proc advanceLayoutForFrame*(e: Editor, buffer: RenderTarget, wasResized: bool) =
   ## Advance per-frame window-layout state so the draw pass can be a read-only
   ## projection: rebuild the layout on resize, sync selection-list cursors,
   ## adjust each viewport to follow its cursor, and set the screen cursor and
@@ -313,7 +312,7 @@ proc advanceLayoutForFrame*(e: Editor, buffer: Buffer, wasResized: bool) =
     e.state.screenCursor.x = 0
     e.state.screenCursor.y = buffer.area.height - 1
 
-proc renderSplitView*(e: Editor, buffer: var Buffer) =
+proc renderSplitView*(e: Editor, buffer: var RenderTarget) =
   ## Paint the split window view. Read-only: viewport scrolling, selection-list
   ## cursor sync, and screen cursor/visibility are advanced beforehand in
   ## `advanceLayoutForFrame`; this proc only draws.
@@ -403,7 +402,7 @@ proc renderSplitView*(e: Editor, buffer: var Buffer) =
       e.renderWindowSeparator(buffer, window, nextWindow, layout.isBottomWindow)
 
 proc renderWrappedInput(
-    buffer: var Buffer,
+    buffer: var RenderTarget,
     areaTopY, areaH, width: int,
     text: string,
     grid: tuple[totalRows, cursorRow, cursorCol: int],
@@ -422,8 +421,10 @@ proc renderWrappedInput(
     # The steady single row keeps the overlay-styled status line beneath the
     # input, matching the previous shared-row rendering.
     buffer.fill(
-      Rect(x: buffer.area.x, y: areaTopY, width: buffer.area.width, height: areaH),
-      cell(" ", style),
+      RenderRect(x: buffer.area.x, y: areaTopY, width: buffer.area.width, height: areaH),
+      " ",
+      1,
+      style,
     )
 
   # Walk the wrap segments once and draw the visible ones. Same grid as
@@ -442,7 +443,7 @@ proc renderWrappedInput(
     bytePos = endByte
     row.inc
 
-proc renderBottomLines*(e: Editor, buffer: var Buffer) =
+proc renderBottomLines*(e: Editor, buffer: var RenderTarget) =
   ## Render status line and the command-line area at the bottom of the screen.
   ## The area height is dynamic (commandLineAreaHeight): in the steady state
   ## it is the single row shared by the status line and the command line
@@ -512,13 +513,17 @@ proc renderBottomLines*(e: Editor, buffer: var Buffer) =
           else:
             allLines
       buffer.fill(
-        Rect(x: buffer.area.x, y: areaTopY, width: buffer.area.width, height: lines.len),
-        cell(" ", commandStyle()),
+        RenderRect(
+          x: buffer.area.x, y: areaTopY, width: buffer.area.width, height: lines.len
+        ),
+        " ",
+        1,
+        commandStyle(),
       )
       for i, line in lines:
         buffer.setString(buffer.area.x, areaTopY + i, line, commandStyle())
 
-proc renderTempMessages*(e: Editor, buffer: var Buffer) =
+proc renderTempMessages*(e: Editor, buffer: var RenderTarget) =
   ## Render temporary messages at the bottom of screen (like Vim's :jumps output)
   ## Overwrites the buffer content from bottom up, with a border at top
   if e.state.ui.tempMessages.len == 0:
@@ -555,7 +560,7 @@ proc renderTempMessages*(e: Editor, buffer: var Buffer) =
   # Read-only: the screen cursor for this prompt is placed in
   # advanceLayoutForFrame.
 
-proc renderCodeLensPicker*(e: Editor, buffer: var Buffer) =
+proc renderCodeLensPicker*(e: Editor, buffer: var RenderTarget) =
   ## Render CodeLens picker popup when multiple items are available
   if not e.state.lspCache.codeLensPicker.isActive or
       e.state.lspCache.codeLensPicker.items.len == 0:
