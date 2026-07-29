@@ -302,9 +302,7 @@ proc collectWordSet(
         result.incl(word)
 
 proc collectBufferWords*(
-    buffer: TextBuffer,
-    excludePos: RenderTargetPosition,
-    otherBuffers: seq[TextBuffer] = @[],
+    buffer: TextBuffer, excludePos: BufferPosition, otherBuffers: seq[TextBuffer] = @[]
 ): seq[string] =
   ## Collect all unique words from the current buffer and other open buffers.
   ## Excludes the word at the current cursor position. Order is unspecified;
@@ -995,7 +993,7 @@ proc calculatePopupPosition*(
   PopupPosition(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
 
 proc renderCompletionPopup*(
-    termBuffer: var RenderTarget,
+    target: var RenderTarget,
     menu: CompletionMenu,
     pos: PopupPosition,
     showBorder: bool = true,
@@ -1026,14 +1024,14 @@ proc renderCompletionPopup*(
 
   if showBorder:
     # Draw border if enabled
-    drawBorder(termBuffer, pos.x, pos.y, pos.width, pos.height, popupBorderStyle())
+    drawBorder(target, pos.x, pos.y, pos.width, pos.height, popupBorderStyle())
 
   # Content (always rendered)
   let maxWordW = calculateMaxWordWidth(menu.entries)
   let contentLimit = contentX + contentWidth
   for i in 0 ..< contentHeight:
     let y = contentY + i
-    if y >= 0 and y < termBuffer.area.height:
+    if y >= 0 and y < target.area.height:
       let entryIdx = menu.scrollOffset + i
       if entryIdx < menu.entries.len:
         let entry = menu.entries[entryIdx]
@@ -1051,8 +1049,7 @@ proc renderCompletionPopup*(
           displayWord = truncateToWidthWithSuffix(displayWord, contentWidth, "…")
 
         # Draw word
-        var x =
-          drawClippedRunes(termBuffer, contentX, y, contentLimit, displayWord, style)
+        var x = drawClippedRunes(target, contentX, y, contentLimit, displayWord, style)
 
         # Draw detail after the word (if available)
         let detailStyle =
@@ -1063,7 +1060,7 @@ proc renderCompletionPopup*(
         if entry.detail.isSome and entry.detail.get.len > 0:
           # Fill gap between word and detail
           let detailStartX = contentX + maxWordW + DetailSeparatorWidth
-          x = fillCells(termBuffer, x, y, min(detailStartX, contentLimit), style)
+          x = fillCells(target, x, y, min(detailStartX, contentLimit), style)
 
           # Render detail by display width (CJK/wide-char safe, availableDetailWidth <= 0 safe)
           let availableDetailWidth = contentLimit - x
@@ -1071,11 +1068,10 @@ proc renderCompletionPopup*(
           if displayDetail.displayWidth > availableDetailWidth:
             displayDetail =
               truncateToWidthWithSuffix(displayDetail, availableDetailWidth, "…")
-          x =
-            drawClippedRunes(termBuffer, x, y, contentLimit, displayDetail, detailStyle)
+          x = drawClippedRunes(target, x, y, contentLimit, displayDetail, detailStyle)
 
         # Fill remaining space with background
-        x = fillCells(termBuffer, x, y, contentLimit, style)
+        x = fillCells(target, x, y, contentLimit, style)
 
 proc updateDocPanel*(mgr: CompletionManager) =
   ## Update the documentation panel based on the selected entry
@@ -1138,9 +1134,7 @@ proc calculateDocPanelPosition*(
   )
   PopupPosition(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
 
-proc renderDocPanel*(
-    termBuffer: var RenderTarget, docPanel: DocPanel, pos: PopupPosition
-) =
+proc renderDocPanel*(target: var RenderTarget, docPanel: DocPanel, pos: PopupPosition) =
   ## Render documentation panel to terminal buffer
   if not docPanel.visible or docPanel.lines.len == 0:
     return
@@ -1155,15 +1149,15 @@ proc renderDocPanel*(
   let contentLimit = contentX + contentWidth
 
   # Border box; scroll indicators replace the right-hand corners when scrollable
-  drawBorder(termBuffer, pos.x, pos.y, pos.width, pos.height, docPanelBorderStyle())
-  if canScrollUp and pos.y >= 0 and pos.y < termBuffer.area.height and rightX >= 0 and
-      rightX < termBuffer.area.width:
-    termBuffer[rightX, pos.y] = cell("▲", docPanelScrollStyle())
+  drawBorder(target, pos.x, pos.y, pos.width, pos.height, docPanelBorderStyle())
+  if canScrollUp and pos.y >= 0 and pos.y < target.area.height and rightX >= 0 and
+      rightX < target.area.width:
+    target.setCell(rightX, pos.y, "▲", 1, docPanelScrollStyle())
 
   # Content lines
   for i in 0 ..< visibleLines:
     let lineY = contentY + i
-    if lineY < 0 or lineY >= termBuffer.area.height:
+    if lineY < 0 or lineY >= target.area.height:
       continue
 
     let lineIdx = docPanel.scrollOffset + i
@@ -1174,15 +1168,15 @@ proc renderDocPanel*(
         ""
 
     let afterText = drawClippedRunes(
-      termBuffer, contentX, lineY, contentLimit, lineText, docPanelNormalStyle()
+      target, contentX, lineY, contentLimit, lineText, docPanelNormalStyle()
     )
-    discard fillCells(termBuffer, afterText, lineY, contentLimit, docPanelNormalStyle())
+    discard fillCells(target, afterText, lineY, contentLimit, docPanelNormalStyle())
 
   # Bottom scroll indicator (the border itself was drawn above)
   let bottomY = contentY + visibleLines
-  if canScrollDown and bottomY >= 0 and bottomY < termBuffer.area.height and rightX >= 0 and
-      rightX < termBuffer.area.width:
-    termBuffer[rightX, bottomY] = cell("▼", docPanelScrollStyle())
+  if canScrollDown and bottomY >= 0 and bottomY < target.area.height and rightX >= 0 and
+      rightX < target.area.width:
+    target.setCell(rightX, bottomY, "▼", 1, docPanelScrollStyle())
 
 # LSP completion support
 

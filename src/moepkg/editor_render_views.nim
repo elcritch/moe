@@ -73,7 +73,7 @@ proc wrapPosAbove(aLine, aSeg, bLine, bSeg: int): bool {.inline.} =
 
 proc adjustViewportForCursor(
     viewport: ViewPort,
-    cursor: RenderTargetPosition,
+    cursor: BufferPosition,
     visibleHeight, textAreaWidth: int,
     lineWrap: bool,
     textBuffer: TextBuffer,
@@ -422,7 +422,9 @@ proc renderWrappedInput(
     # input, matching the previous shared-row rendering.
     buffer.fill(
       RenderRect(x: buffer.area.x, y: areaTopY, width: buffer.area.width, height: areaH),
-      cell(" ", style),
+      " ",
+      1,
+      style,
     )
 
   # Walk the wrap segments once and draw the visible ones. Same grid as
@@ -514,7 +516,9 @@ proc renderBottomLines*(e: Editor, buffer: var RenderTarget) =
         RenderRect(
           x: buffer.area.x, y: areaTopY, width: buffer.area.width, height: lines.len
         ),
-        cell(" ", commandStyle()),
+        " ",
+        1,
+        commandStyle(),
       )
       for i, line in lines:
         buffer.setString(buffer.area.x, areaTopY + i, line, commandStyle())

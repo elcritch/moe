@@ -26,6 +26,7 @@ from pkg/celina import nil
 import ../src/moepkg/celina_render_target
 import ../src/moepkg/popup_render
 import ../src/moepkg/render_target as rt
+import render_target_test_helper
 
 proc newBuffer(width, height: int): celina.Buffer {.inline.} =
   celina.newBuffer(width, height)

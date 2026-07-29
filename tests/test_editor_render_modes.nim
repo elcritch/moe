@@ -32,19 +32,7 @@ import ../src/moepkg/editor_render_modes
 import ../src/moepkg/celina_render_target
 import ../src/moepkg/render_target as rt
 import ../src/moepkg/types/config_mode_types
-
-func `==`(a: celina.ColorValue, b: rt.ColorValue): bool =
-  case b.kind
-  of rt.cvkDefault:
-    a.kind == celina.Default
-  of rt.cvkIndexed256:
-    a.kind == celina.Indexed256 and a.indexed256 == b.indexed256
-  of rt.cvkRgb:
-    a.kind == celina.Rgb and a.rgb.r == b.rgb.r and a.rgb.g == b.rgb.g and
-      a.rgb.b == b.rgb.b
-
-func `==`(a: rt.ColorValue, b: celina.ColorValue): bool =
-  b == a
+import render_target_test_helper
 
 proc createTestEditor(): Editor =
   ## Create a minimal editor for testing

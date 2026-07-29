@@ -22,8 +22,6 @@
 ## These types describe what moe wants to draw. Concrete frontends translate
 ## them to their own drawing primitives at the render-target boundary.
 
-import std/unicode
-
 type
   ColorValueKind* = enum
     cvkDefault
@@ -62,24 +60,11 @@ type
     fg*, bg*: ColorValue
     modifiers*: set[StyleModifier]
 
-  RenderCell* = object
-    symbol*: string
-    style*: Style
-
 func defaultColorValue*(): ColorValue {.inline.} =
   ColorValue(kind: cvkDefault)
 
 func defaultStyle*(): Style {.inline.} =
   Style(fg: defaultColorValue(), bg: defaultColorValue(), modifiers: {})
-
-proc cell*(symbol: string = " ", style: Style = defaultStyle()): RenderCell {.inline.} =
-  RenderCell(symbol: symbol, style: style)
-
-proc cell*(symbol: char, style: Style = defaultStyle()): RenderCell {.inline.} =
-  cell($symbol, style)
-
-proc cell*(symbol: Rune, style: Style = defaultStyle()): RenderCell {.inline.} =
-  cell($symbol, style)
 
 func `==`*(a, b: RgbColor): bool {.inline.} =
   a.r == b.r and a.g == b.g and a.b == b.b

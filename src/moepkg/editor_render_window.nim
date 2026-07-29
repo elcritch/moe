@@ -207,12 +207,12 @@ proc newLineStyleContext*(
 # them in order so the priority list reads as a sequence of named checks.
 
 template matchesVisualSelection(
-    e: Editor, hasSelection: bool, pos: RenderTargetPosition
+    e: Editor, hasSelection: bool, pos: BufferPosition
 ): bool =
   hasSelection and e.state.visualSelection.isPositionInSelection(pos)
 
 template matchesSnippetStop(
-    e: Editor, lineCtx: LineStyleContext, pos: RenderTargetPosition
+    e: Editor, lineCtx: LineStyleContext, pos: BufferPosition
 ): bool =
   ## The pending (still selected) default range of the active snippet
   ## tabstop. Anchored to the active window's session; defaults are
@@ -229,7 +229,7 @@ template matchesSnippetStop(
   )
 
 template matchesMatchingParen(
-    e: Editor, lineCtx: LineStyleContext, pos: RenderTargetPosition
+    e: Editor, lineCtx: LineStyleContext, pos: BufferPosition
 ): bool =
   # `matchingParenPos` is derived from the active window's cursor, so the
   # highlight must only be drawn in the active window — other windows may
@@ -239,7 +239,7 @@ template matchesMatchingParen(
     e.state.matchingParenPos.get.column == pos.column
 
 template matchesFindCharMatch(
-    e: Editor, lineCtx: LineStyleContext, pos: RenderTargetPosition
+    e: Editor, lineCtx: LineStyleContext, pos: BufferPosition
 ): bool =
   # Like matchingParen, f/F/t/T match candidates are anchored to the active
   # window's cursor line; never paint them in inactive windows.
@@ -248,13 +248,11 @@ template matchesFindCharMatch(
     pos.column in e.state.ui.findCharMatches
 
 template matchesCurrentWord(
-    e: Editor, lineCtx: LineStyleContext, pos: RenderTargetPosition
+    e: Editor, lineCtx: LineStyleContext, pos: BufferPosition
 ): bool =
   not e.state.isSearchOverlay and lineCtx.wordRanges.isColumnInRanges(pos.column)
 
-template matchesSearchHighlight(
-    lineCtx: LineStyleContext, pos: RenderTargetPosition
-): bool =
+template matchesSearchHighlight(lineCtx: LineStyleContext, pos: BufferPosition): bool =
   lineCtx.searchRanges.isColumnInRanges(pos.column)
 
 template gitConflictApplies(lineCtx: LineStyleContext): bool =
@@ -268,7 +266,7 @@ template cursorColumnApplies(e: Editor, displayCol: int, cursorDisplayCol: int):
 
 proc overlayPatchSyntax(
     e: Editor,
-    pos: RenderTargetPosition,
+    pos: BufferPosition,
     lineCtx: LineStyleContext,
     displayCol: int,
     cursorDisplayCol: int,
@@ -294,7 +292,7 @@ proc overlayPatchSyntax(
 proc baseStyleWithOverlay(
     e: Editor,
     buffer: TextBuffer,
-    pos: RenderTargetPosition,
+    pos: BufferPosition,
     windowMode: EditorMode,
     displayCol: int,
     cursorDisplayCol: int,
@@ -335,7 +333,7 @@ proc getSelectionStyle*(
     e: Editor,
     buffer: TextBuffer,
     hasSelection: bool,
-    pos: RenderTargetPosition,
+    pos: BufferPosition,
     cursorCol: int,
     windowMode: EditorMode,
     lineCtx: LineStyleContext,
@@ -380,7 +378,7 @@ proc getSelectionStyle*(
 
 proc getVisualSelection*(
     e: Editor, windowMode: EditorMode, windowActive: bool = true
-): tuple[hasSelection: bool, selStart, selEnd: RenderTargetPosition] =
+): tuple[hasSelection: bool, selStart, selEnd: BufferPosition] =
   ## Get visual selection range if active
   ## windowMode: The mode of the window being rendered
   ## windowActive: only show selection in active window (default true for compatibility)
@@ -393,8 +391,8 @@ proc getVisualSelection*(
   else:
     result = (
       hasSelection: false,
-      selStart: RenderTargetPosition(line: 0, column: 0),
-      selEnd: RenderTargetPosition(line: 0, column: 0),
+      selStart: BufferPosition(line: 0, column: 0),
+      selEnd: BufferPosition(line: 0, column: 0),
     )
 
 proc shouldShowIndentationGuide*(

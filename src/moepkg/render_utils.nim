@@ -376,7 +376,7 @@ proc clearBuffer*(buffer: var RenderTarget) =
 
   for y in 0 ..< buffer.area.height:
     for x in 0 ..< buffer.area.width:
-      buffer[x, y] = cell(" ", clearStyle)
+      buffer.setCell(x, y, " ", 1, clearStyle)
 
 # Layout calculation functions
 

@@ -34,26 +34,7 @@ import
     celina_render_target, editor_render_helpers, style_patch, colorcode,
     editor_codelens, render_target, visible_rows,
   ]
-
-func `==`(a: celina.ColorValue, b: ColorValue): bool =
-  case b.kind
-  of cvkDefault:
-    a.kind == celina.Default
-  of cvkIndexed256:
-    a.kind == celina.Indexed256 and a.indexed256 == b.indexed256
-  of cvkRgb:
-    a.kind == celina.Rgb and a.rgb.r == b.rgb.r and a.rgb.g == b.rgb.g and
-      a.rgb.b == b.rgb.b
-
-func `==`(a: ColorValue, b: celina.ColorValue): bool =
-  b == a
-
-func `==`(a: celina.Style, b: Style): bool =
-  let expected = b.toCelinaStyle
-  a.fg == b.fg and a.bg == b.bg and a.modifiers == expected.modifiers
-
-func `==`(a: Style, b: celina.Style): bool =
-  b == a
+import render_target_test_helper
 
 proc setString(
     buffer: var celina.Buffer, x, y: int, text: string, style: Style

@@ -194,7 +194,7 @@ proc calculateSignatureHelpPosition*(
   )
 
 proc renderSignatureHelpPopup*(
-    termBuffer: var RenderTarget,
+    target: var RenderTarget,
     display: SignatureHelpDisplay,
     pos: SignatureHelpPopupPosition,
     showBorder: bool = true,
@@ -222,27 +222,28 @@ proc renderSignatureHelpPopup*(
 
   # Top border
   if showBorder:
-    if pos.y >= 0 and pos.y < termBuffer.area.height:
-      if pos.x >= 0 and pos.x < termBuffer.area.width:
-        termBuffer[pos.x, pos.y] = cell("┌", signatureHelpBorderStyle())
-      for x in pos.x + 1 ..< min(pos.x + pos.width - 1, termBuffer.area.width):
+    if pos.y >= 0 and pos.y < target.area.height:
+      if pos.x >= 0 and pos.x < target.area.width:
+        target.setCell(pos.x, pos.y, "┌", 1, signatureHelpBorderStyle())
+      for x in pos.x + 1 ..< min(pos.x + pos.width - 1, target.area.width):
         if x >= 0:
-          termBuffer[x, pos.y] = cell("─", signatureHelpBorderStyle())
-      if pos.x + pos.width - 1 >= 0 and pos.x + pos.width - 1 < termBuffer.area.width:
-        termBuffer[pos.x + pos.width - 1, pos.y] =
-          cell("┐", signatureHelpBorderStyle())
+          target.setCell(x, pos.y, "─", 1, signatureHelpBorderStyle())
+      if pos.x + pos.width - 1 >= 0 and pos.x + pos.width - 1 < target.area.width:
+        target.setCell(
+          pos.x + pos.width - 1, pos.y, "┐", 1, signatureHelpBorderStyle()
+        )
 
   # Side borders and content (content always rendered)
-  if contentY >= 0 and contentY < termBuffer.area.height:
+  if contentY >= 0 and contentY < target.area.height:
     # Left border
-    if showBorder and pos.x >= 0 and pos.x < termBuffer.area.width:
-      termBuffer[pos.x, contentY] = cell("│", signatureHelpBorderStyle())
+    if showBorder and pos.x >= 0 and pos.x < target.area.width:
+      target.setCell(pos.x, contentY, "│", 1, signatureHelpBorderStyle())
 
     # Content - signature with highlighted active parameter
     var x = contentX
     var charIdx = 0
     for r in display.signature.runes:
-      if x >= contentX + contentWidth or x >= termBuffer.area.width:
+      if x >= contentX + contentWidth or x >= target.area.width:
         break
 
       # Determine style based on whether this character is in the active parameter
@@ -253,29 +254,31 @@ proc renderSignatureHelpPopup*(
         else:
           signatureHelpNormalStyle()
 
-      x += setRuneCell(termBuffer, x, contentY, r, style)
+      x += setRuneCell(target, x, contentY, r, style)
       inc charIdx
 
     # Fill remaining space with background
-    while x < contentX + contentWidth and x < termBuffer.area.width:
-      termBuffer[x, contentY] = cell(" ", signatureHelpNormalStyle())
+    while x < contentX + contentWidth and x < target.area.width:
+      target.setCell(x, contentY, " ", 1, signatureHelpNormalStyle())
       inc x
 
     # Right border
     if showBorder and pos.x + pos.width - 1 >= 0 and
-        pos.x + pos.width - 1 < termBuffer.area.width:
-      termBuffer[pos.x + pos.width - 1, contentY] =
-        cell("│", signatureHelpBorderStyle())
+        pos.x + pos.width - 1 < target.area.width:
+      target.setCell(
+        pos.x + pos.width - 1, contentY, "│", 1, signatureHelpBorderStyle()
+      )
 
   # Bottom border
   if showBorder:
     let bottomY = contentY + 1
-    if bottomY >= 0 and bottomY < termBuffer.area.height:
-      if pos.x >= 0 and pos.x < termBuffer.area.width:
-        termBuffer[pos.x, bottomY] = cell("└", signatureHelpBorderStyle())
-      for x in pos.x + 1 ..< min(pos.x + pos.width - 1, termBuffer.area.width):
+    if bottomY >= 0 and bottomY < target.area.height:
+      if pos.x >= 0 and pos.x < target.area.width:
+        target.setCell(pos.x, bottomY, "└", 1, signatureHelpBorderStyle())
+      for x in pos.x + 1 ..< min(pos.x + pos.width - 1, target.area.width):
         if x >= 0:
-          termBuffer[x, bottomY] = cell("─", signatureHelpBorderStyle())
-      if pos.x + pos.width - 1 >= 0 and pos.x + pos.width - 1 < termBuffer.area.width:
-        termBuffer[pos.x + pos.width - 1, bottomY] =
-          cell("┘", signatureHelpBorderStyle())
+          target.setCell(x, bottomY, "─", 1, signatureHelpBorderStyle())
+      if pos.x + pos.width - 1 >= 0 and pos.x + pos.width - 1 < target.area.width:
+        target.setCell(
+          pos.x + pos.width - 1, bottomY, "┘", 1, signatureHelpBorderStyle()
+        )

@@ -25,36 +25,38 @@
 
 import std/unicode
 
-import primitives
 import render_types
 
 export render_types
 
 type
-  RenderTargetPosition* = BufferPosition
-
   RenderRect* = object
     x*, y*, width*, height*: int
 
-  RenderSetCellProc* =
+  RenderSetCellFn* =
     proc(context: pointer, x, y: int, symbol: string, width: int, style: Style)
-  RenderSetStringProc* = proc(context: pointer, x, y: int, text: string, style: Style)
-  RenderFoldZeroWidthRuneProc* = proc(context: pointer, x, y: int, rune: Rune)
+  RenderSetStringFn* = proc(context: pointer, x, y: int, text: string, style: Style)
+  RenderFoldZeroWidthRuneFn* = proc(context: pointer, x, y: int, rune: Rune)
 
   RenderTarget* = object
     area*: RenderRect
-    context*: pointer
-    setCellImpl*: RenderSetCellProc
-    setStringImpl*: RenderSetStringProc
-    foldZeroWidthRuneImpl*: RenderFoldZeroWidthRuneProc
+    context: pointer
+    setCellImpl: RenderSetCellFn
+    setStringImpl: RenderSetStringFn
+    foldZeroWidthRuneImpl: RenderFoldZeroWidthRuneFn
 
 proc initRenderTarget*(
     area: RenderRect,
     context: pointer,
-    setCellImpl: RenderSetCellProc,
-    setStringImpl: RenderSetStringProc,
-    foldZeroWidthRuneImpl: RenderFoldZeroWidthRuneProc = nil,
+    setCellImpl: RenderSetCellFn,
+    setStringImpl: RenderSetStringFn,
+    foldZeroWidthRuneImpl: RenderFoldZeroWidthRuneFn,
 ): RenderTarget =
+  doAssert not setCellImpl.isNil, "RenderTarget requires a setCell callback"
+  doAssert not setStringImpl.isNil, "RenderTarget requires a setString callback"
+  doAssert not foldZeroWidthRuneImpl.isNil,
+    "RenderTarget requires a zero-width-rune callback"
+
   RenderTarget(
     area: area,
     context: context,
@@ -70,8 +72,7 @@ proc setCell*(
     width: int,
     style: Style = defaultStyle(),
 ) {.inline.} =
-  if not target.setCellImpl.isNil:
-    target.setCellImpl(target.context, x, y, symbol, width, style)
+  target.setCellImpl(target.context, x, y, symbol, width, style)
 
 proc setCell*(
     target: var RenderTarget,
@@ -85,14 +86,15 @@ proc setCell*(
 proc setString*(
     target: var RenderTarget, x, y: int, text: string, style: Style = defaultStyle()
 ) {.inline.} =
-  if not target.setStringImpl.isNil:
-    target.setStringImpl(target.context, x, y, text, style)
+  target.setStringImpl(target.context, x, y, text, style)
 
-proc `[]=`*(target: var RenderTarget, x, y: int, renderCell: RenderCell) {.inline.} =
-  let width = if renderCell.symbol.len == 0: 0 else: 1
-  target.setCell(x, y, renderCell.symbol, width, renderCell.style)
-
-proc fill*(target: var RenderTarget, area: RenderRect, fillCell: RenderCell) =
+proc fill*(
+    target: var RenderTarget,
+    area: RenderRect,
+    symbol: string,
+    width: int,
+    style: Style = defaultStyle(),
+) =
   let
     startX = max(area.x, target.area.x)
     startY = max(area.y, target.area.y)
@@ -101,8 +103,7 @@ proc fill*(target: var RenderTarget, area: RenderRect, fillCell: RenderCell) =
 
   for y in startY ..< endY:
     for x in startX ..< endX:
-      target[x, y] = fillCell
+      target.setCell(x, y, symbol, width, style)
 
 proc foldZeroWidthRune*(target: var RenderTarget, x, y: int, rune: Rune) {.inline.} =
-  if not target.foldZeroWidthRuneImpl.isNil:
-    target.foldZeroWidthRuneImpl(target.context, x, y, rune)
+  target.foldZeroWidthRuneImpl(target.context, x, y, rune)

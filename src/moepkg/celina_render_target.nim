@@ -19,19 +19,16 @@
 
 ## Celina adapter for moe's frontend-neutral render target.
 
-import pkg/celina as celina
-
 import std/unicode
+
+import pkg/celina as celina
 
 import render_target as rt
 
-func toRenderRect*(area: celina.Rect): rt.RenderRect {.inline.} =
+func toRenderRect(area: celina.Rect): rt.RenderRect {.inline.} =
   rt.RenderRect(x: area.x, y: area.y, width: area.width, height: area.height)
 
-func toCelinaRect*(area: rt.RenderRect): celina.Rect {.inline.} =
-  celina.Rect(x: area.x, y: area.y, width: area.width, height: area.height)
-
-func toCelinaColorValue*(color: rt.ColorValue): celina.ColorValue =
+func toCelinaColorValue(color: rt.ColorValue): celina.ColorValue =
   case color.kind
   of rt.cvkDefault:
     celina.ColorValue(kind: celina.Default)
@@ -75,7 +72,7 @@ func toCelinaModifiers(modifiers: set[rt.StyleModifier]): set[celina.StyleModifi
     of rt.StyleModifier.Overline:
       result.incl(celina.StyleModifier.Overline)
 
-func toCelinaStyle*(style: rt.Style): celina.Style =
+func toCelinaStyle(style: rt.Style): celina.Style =
   celina.Style(
     fg: style.fg.toCelinaColorValue,
     bg: style.bg.toCelinaColorValue,
