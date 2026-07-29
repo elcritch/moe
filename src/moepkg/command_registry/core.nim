@@ -23,7 +23,8 @@ import std/[tables, options, strutils, unicode]
 
 import pkg/results
 
-import ../[types, buffer, motion, key_bindings, config, logger]
+import ../[types, motion, key_bindings, config, logger]
+import ../buffer/[core, edit]
 
 type
   ## Built-in command identifiers
@@ -56,11 +57,6 @@ type
     bcModeNormal = "mode.normal"
     bcModeInsert = "mode.insert"
     bcModeCommand = "mode.command"
-    # File operations
-    bcFileSave = "file.save"
-    bcFileOpen = "file.open"
-    bcFileNew = "file.new"
-    bcFileClose = "file.close"
     # Edit operations
     bcEditUndo = "edit.undo"
     bcEditRedo = "edit.redo"
@@ -69,17 +65,6 @@ type
     bcEditPaste = "edit.paste"
     bcEditIncrementNumber = "edit.increment"
     bcEditDecrementNumber = "edit.decrement"
-    # Jump list operations
-    bcJumpBack = "jump.back" # Ctrl-o
-    bcJumpForward = "jump.forward" # Ctrl-i
-    # Change list operations
-    bcChangeListPrev = "changelist.prev" # g;
-    bcChangeListNext = "changelist.next" # g,
-    # Bookmark operations
-    bcBookmarkToggle = "bookmark.toggle"
-    bcBookmarkNext = "bookmark.next"
-    bcBookmarkPrev = "bookmark.prev"
-    bcBookmarkClear = "bookmark.clear"
     # Insert mode operations
     bcInsertChar = "insert.char"
     bcInsertBackspace = "insert.backspace"
@@ -118,14 +103,6 @@ type
     bcVisualChange = "visual.change"
     bcVisualSwapSelection = "visual.swap.selection"
     bcVisualPaste = "visual.paste"
-    # Filer operations
-    bcFiler = "filer.open"
-    # LSP operations
-    bcLspGotoDefinition = "lsp.goto.definition"
-    bcLspFindReferences = "lsp.find.references"
-    bcLspCodeLensExecute = "lsp.codelens.execute"
-    bcLspCallHierarchyIncoming = "lsp.callhierarchy.incoming"
-    bcLspCallHierarchyOutgoing = "lsp.callhierarchy.outgoing"
     # Fold operations
     bcFoldOpen = "fold.open" # zo - open fold at cursor
     bcFoldClose = "fold.close" # zc - close fold at cursor
@@ -150,16 +127,15 @@ type
     of ckCustom:
       custom*: string
 
-  ## Context needed to execute commands
+  ## Context needed to execute commands.
+  ## Config sections are pulled live from `state.config` via getters below, so
+  ## `applyConfigSettings`' ref swap is picked up on the next command.
   CommandContext* = ref object
-    buffer*: buffer.TextBuffer
+    buffer*: core.TextBuffer
     state*: EditorState
     viewport*: ViewPort
     motionController*: MotionController
     keyBindingRegistry*: key_bindings.KeyBindingRegistry
-    clipboardConfig*: ClipboardConfig
-    smoothScrollConfig*: SmoothScrollConfig
-    notificationConfig*: NotificationConfig
 
   ## Function signature for command handlers
   CommandHandler* =
@@ -179,7 +155,6 @@ type
     commands*: Table[string, RegisteredCommand]
     builtinCommands*: array[BuiltinCommandId, RegisteredCommand]
       ## Fast access for builtins
-    aliases*: Table[string, CommandId] ## Alias -> command ID mapping
 
 proc cursor*(ctx: CommandContext): var BufferPosition {.inline.} =
   ## Cursor position forwarded to EditorState (which delegates to activeWindow)
@@ -187,6 +162,15 @@ proc cursor*(ctx: CommandContext): var BufferPosition {.inline.} =
 
 proc `cursor=`*(ctx: CommandContext, pos: BufferPosition) {.inline.} =
   ctx.state.cursor = pos
+
+proc clipboardConfig*(ctx: CommandContext): ClipboardConfig =
+  ctx.state.config.clipboard
+
+proc smoothScrollConfig*(ctx: CommandContext): SmoothScrollConfig =
+  ctx.state.config.smoothScroll
+
+proc notificationConfig*(ctx: CommandContext): NotificationConfig =
+  ctx.state.config.notification
 
 proc notify*(ctx: CommandContext, msg: string, level: NotificationLevel = nlInfo) =
   ## Send a notification via popup or status line based on config.
@@ -222,10 +206,7 @@ proc custom*(id: string): CommandId =
 
 proc newCommandRegistry*(): CommandRegistry =
   ## Create a new command registry
-  result = CommandRegistry(
-    commands: initTable[string, RegisteredCommand](),
-    aliases: initTable[string, CommandId](),
-  )
+  result = CommandRegistry(commands: initTable[string, RegisteredCommand]())
   # Initialize builtin commands array with empty entries
   for i in BuiltinCommandId:
     result.builtinCommands[i] = RegisteredCommand(
@@ -259,18 +240,6 @@ proc register*(
   if id.kind == ckBuiltin and id.builtin != bcNone:
     registry.builtinCommands[id.builtin] = cmd
 
-proc registerAlias*(registry: CommandRegistry, alias: string, commandId: CommandId) =
-  ## Register an alias for a command
-  let idStr = $commandId
-  if idStr in registry.commands:
-    registry.aliases[alias] = commandId
-
-proc registerAlias*(
-    registry: CommandRegistry, alias: string, builtinId: BuiltinCommandId
-) =
-  ## Convenience overload for builtin commands
-  registry.registerAlias(alias, builtin(builtinId))
-
 proc findCommand*(registry: CommandRegistry, id: CommandId): Option[RegisteredCommand] =
   ## Find a command by CommandId
   # Fast path for builtin commands
@@ -286,16 +255,10 @@ proc findCommand*(registry: CommandRegistry, id: CommandId): Option[RegisteredCo
 
   return none(RegisteredCommand)
 
-proc findCommand*(
-    registry: CommandRegistry, idOrAlias: string
-): Option[RegisteredCommand] =
-  ## Find a command by string ID or alias
-  if idOrAlias in registry.commands:
-    return some(registry.commands[idOrAlias])
-
-  if idOrAlias in registry.aliases:
-    let id = registry.aliases[idOrAlias]
-    return registry.findCommand(id)
+proc findCommand*(registry: CommandRegistry, idStr: string): Option[RegisteredCommand] =
+  ## Find a command by string ID
+  if idStr in registry.commands:
+    return some(registry.commands[idStr])
 
   return none(RegisteredCommand)
 

@@ -143,6 +143,7 @@ type
     inDisplayMath*: bool
     inFrontmatter*: bool
     firstLine*: bool
+    codeBlockLang*: SourceLanguage
 
   LatexState* = object
     inMathMode*: bool
@@ -167,6 +168,13 @@ type
   PythonState* = object
     commentDepth*: int
 
+  LuaState* = object
+    longBracketLevel*: int
+      ## `=` count of the long bracket currently open (`[[` is 0, `[==[` is 2).
+      ## Only meaningful while `state` is `gtLongComment`/`gtLongStringLit`.
+    stringQuote*: char
+      ## Quote that opened the single-line string parked on a backslash escape.
+
   LangState* = object
     ## Per-language tokenizer state, captured/restored as a whole record.
     ## 8-aligned members first, then bool-only, to minimise padding.
@@ -175,6 +183,7 @@ type
     lisp*: LispState
     haskell*: HaskellState
     python*: PythonState
+    lua*: LuaState
     html*: HtmlState
     astro*: AstroState
     yaml*: YamlState
@@ -206,6 +215,7 @@ type
     langFish
     langGitRebaseTodo
     langGitignore
+    langGo
     langHaskell
     langHtml
     langHyprland
@@ -215,6 +225,7 @@ type
     langLatex
     langLisp
     langLog
+    langLua
     langMarkdown
     langNim
     langPython
@@ -249,19 +260,70 @@ const
   ## All whitespace characters.
   wsChars*: set[char] = {'\t' .. '\r', ' '}
 
+  ## Display name per language. Keyed by enum member on purpose: a positional
+  ## literal only compile-checks the length, so inserting a language mid-enum
+  ## would silently shift every later name and misroute `getSourceLanguage`.
   sourceLanguageToStr*: array[SourceLanguage, string] = [
-    "none", "Astro", "C", "COMMIT_EDITMSG", "C++", "C#", "Diff", "Dockerfile", "Fish",
-    "git-rebase-todo", "gitignore", "Haskell", "HTML", "Hyprland", "Java", "JavaScript",
-    "JavaScriptReact", "LaTeX", "Lisp", "Log", "Markdown", "Nim", "Python", "Rust",
-    "Shell", "Tcl", "Toml", "Yaml", "Json", "Jsonc", "TypeScript", "TypeScriptReact",
-    "XML", "Zsh",
+    langNone: "none",
+    langAstro: "Astro",
+    langC: "C",
+    langCommitEditMsg: "COMMIT_EDITMSG",
+    langCpp: "C++",
+    langCsharp: "C#",
+    langDiff: "Diff",
+    langDockerfile: "Dockerfile",
+    langFish: "Fish",
+    langGitRebaseTodo: "git-rebase-todo",
+    langGitignore: "gitignore",
+    langGo: "Go",
+    langHaskell: "Haskell",
+    langHtml: "HTML",
+    langHyprland: "Hyprland",
+    langJava: "Java",
+    langJavaScript: "JavaScript",
+    langJsx: "JavaScriptReact",
+    langLatex: "LaTeX",
+    langLisp: "Lisp",
+    langLog: "Log",
+    langLua: "Lua",
+    langMarkdown: "Markdown",
+    langNim: "Nim",
+    langPython: "Python",
+    langRust: "Rust",
+    langShell: "Shell",
+    langTcl: "Tcl",
+    langToml: "Toml",
+    langYaml: "Yaml",
+    langJson: "Json",
+    langJsonc: "Jsonc",
+    langTypeScript: "TypeScript",
+    langTsx: "TypeScriptReact",
+    langXml: "XML",
+    langZsh: "Zsh",
   ]
 
 proc getSourceLanguage*(name: string): SourceLanguage =
   for i in countup(succ(low(SourceLanguage)), high(SourceLanguage)):
     if cmpIgnoreStyle(name, sourceLanguageToStr[i]) == 0:
       return i
-  result = langNone
+  case name.toLowerAscii
+  of "js": langJavaScript
+  of "jsx": langJsx
+  of "ts": langTypeScript
+  of "tsx": langTsx
+  of "py": langPython
+  of "rs": langRust
+  of "sh", "bash": langShell
+  of "yml": langYaml
+  of "docker": langDockerfile
+  of "md": langMarkdown
+  of "cpp", "cxx": langCpp
+  of "cs", "csharp": langCsharp
+  of "golang": langGo
+  of "hs": langHaskell
+  of "luau": langLua
+  of "tex", "latex": langLatex
+  else: langNone
 
 proc defaultLangState*(): LangState =
   ## Initial `LangState` for a fresh tokenizer. Callers seeding a tokenizer at
@@ -446,11 +508,11 @@ proc isKeyword*(x: openArray[string], y: string): int =
 
 import
   syntax_astro, syntax_c, syntax_commit_edit_msg, syntax_cpp, syntax_csharp,
-  syntax_diff, syntax_dockerfile, syntax_git_rebase_todo, syntax_gitignore,
+  syntax_diff, syntax_dockerfile, syntax_git_rebase_todo, syntax_gitignore, syntax_go,
   syntax_haskell, syntax_html, syntax_java, syntax_javascript, syntax_latex,
-  syntax_lisp, syntax_markdown, syntax_nim, syntax_python, syntax_rust, syntax_fish,
-  syntax_hyprland, syntax_shell, syntax_tcl, syntax_yaml, syntax_toml, syntax_json,
-  syntax_jsonc, syntax_typescript, syntax_log, syntax_xml, syntax_zsh
+  syntax_lisp, syntax_lua, syntax_markdown, syntax_nim, syntax_python, syntax_rust,
+  syntax_fish, syntax_hyprland, syntax_shell, syntax_tcl, syntax_yaml, syntax_toml,
+  syntax_json, syntax_jsonc, syntax_typescript, syntax_log, syntax_xml, syntax_zsh
 
 proc getNextToken*(g: var GeneralTokenizer, lang: SourceLanguage) =
   let
@@ -467,6 +529,7 @@ proc getNextToken*(g: var GeneralTokenizer, lang: SourceLanguage) =
   of langFish: g.fishNextToken
   of langGitRebaseTodo: g.gitRebaseTodoNextToken
   of langGitignore: g.gitignoreNextToken
+  of langGo: g.goNextToken
   of langHaskell: g.haskellNextToken
   of langHtml: g.htmlNextToken
   of langHyprland: g.hyprlandNextToken
@@ -475,6 +538,7 @@ proc getNextToken*(g: var GeneralTokenizer, lang: SourceLanguage) =
   of langLatex: g.latexNextToken
   of langLisp: g.lispNextToken
   of langLog: g.logNextToken
+  of langLua: g.luaNextToken
   of langMarkdown: g.markdownNextToken
   of langNim: g.nimNextToken
   of langPython: g.pythonNextToken
@@ -488,7 +552,7 @@ proc getNextToken*(g: var GeneralTokenizer, lang: SourceLanguage) =
   of langTypeScript, langTsx: g.typescriptNextToken
   of langXml: g.xmlNextToken
   of langZsh: g.zshNextToken
-  else: discard
+  of langNone: discard
 
   if g.kind != gtEof and g.pos <= startPos and g.state == startState:
     # Monotonic-advance guard: a non-EOF token must make progress, by consuming

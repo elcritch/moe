@@ -22,7 +22,7 @@ import std/[os, strformat, options, strutils]
 import pkg/[results, chronos]
 
 import syntax/tokenizer
-import config, buffer, background_process
+import config, buffer/[core, file_io], background_process
 
 export SourceLanguage
 
@@ -50,6 +50,10 @@ proc languageExtension(lang: SourceLanguage): Result[string, string] =
     Result[string, string].ok "py"
   of SourceLanguage.langRust:
     Result[string, string].ok "rs"
+  of SourceLanguage.langLua:
+    Result[string, string].ok "lua"
+  of SourceLanguage.langGo:
+    Result[string, string].ok "go"
   else:
     Result[string, string].err "Unknown language"
 
@@ -179,6 +183,16 @@ proc pythonQuickRunCommand(
 ): BackgroundProcessCommand =
   BackgroundProcessCommand(cmd: "python3", args: @[path])
 
+proc luaQuickRunCommand(
+    path: string, settings: QuickRunConfig
+): BackgroundProcessCommand =
+  BackgroundProcessCommand(cmd: "lua", args: @[path])
+
+proc goQuickRunCommand(
+    path: string, settings: QuickRunConfig
+): BackgroundProcessCommand =
+  BackgroundProcessCommand(cmd: "go", args: @["run", path])
+
 proc rustQuickRunCommand(
     path: string, settings: QuickRunConfig
 ): BackgroundProcessCommand =
@@ -213,6 +227,10 @@ proc quickRunCommand(
     command = pythonQuickRunCommand(path, settings)
   of SourceLanguage.langRust:
     command = rustQuickRunCommand(path, settings)
+  of SourceLanguage.langLua:
+    command = luaQuickRunCommand(path, settings)
+  of SourceLanguage.langGo:
+    command = goQuickRunCommand(path, settings)
   else:
     let shebang = parseShebang(buffer)
     if shebang.isSome:
@@ -343,11 +361,14 @@ proc abandonQuickRunProcess*(p: QuickRunProcess) =
   p.cleanupTempFiles()
 
 proc waitForResultAsync*(
-    p: QuickRunProcess
-): Future[Result[seq[string], string]] {.async: (raises: []).} =
-  ## Wait for the process to finish and return the output.
+    p: QuickRunProcess, timeout: Duration
+): Future[ProcessOutputResult] {.async: (raises: []).} =
+  ## Wait for the process to finish and return the output. A program still
+  ## running after `timeout` (an infinite loop, or one waiting on stdin, which
+  ## QuickRun never provides) is killed and reported as an error. Temporary
+  ## files are removed either way.
 
-  let output = await p.process.waitForAsync()
+  let output = await p.process.waitForAsync(timeout)
   p.cleanupTempFiles()
 
-  return Result[seq[string], string].ok output
+  return output

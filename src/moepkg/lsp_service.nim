@@ -21,7 +21,7 @@
 ## Manages multiple LSP workers and provides high-level API for editor integration
 ## Uses thread-based workers to avoid blocking the UI event loop
 
-import std/[tables, sets, options, os, strutils, json, times, uri]
+import std/[algorithm, tables, sets, options, os, strutils, json, times, uri]
 
 import pkg/[results, chronos, jsony]
 
@@ -54,6 +54,9 @@ type
       ## Serialized JSON for the server's `initializationOptions` ("" = none).
       ## Stored as a string because JsonNode refs cannot cross the worker
       ## thread boundary under --mm:orc.
+    settings*: string
+      ## Serialized JSON for workspace/didChangeConfiguration and
+      ## workspace/configuration responses ("" = none).
 
   LspResponseStatus* = enum
     lrsPending # Response not yet received
@@ -85,6 +88,7 @@ type
     ##   global state, but actual invocation is always single-threaded.
     workers: Table[string, LspWorker] # languageId -> worker
     configs: Table[string, LanguageServerConfig] # languageId -> config
+    extToLangId: Table[string, string] # lowercase ext -> langId (reverse index)
     capabilities: Table[string, ServerCapabilities] # languageId -> capabilities
     serverInfo: Table[string, tuple[name: string, version: Option[string]]]
       # languageId -> server info
@@ -187,6 +191,13 @@ proc defaultLanguageServerConfigs*(): Table[string, LanguageServerConfig] =
     enabled: true,
   )
 
+  result["lua"] = LanguageServerConfig(
+    command: "lua-language-server",
+    args: @[],
+    extensions: @["lua", "luau", "rockspec"],
+    enabled: true,
+  )
+
   result["go"] = LanguageServerConfig(
     command: "gopls", args: @[], extensions: @["go"], enabled: true
   )
@@ -202,11 +213,36 @@ proc defaultLanguageServerConfigs*(): Table[string, LanguageServerConfig] =
     enabled: true,
   )
 
+proc rebuildExtIndex(svc: LspService) =
+  ## On duplicate extensions the alphabetically-first langId wins for stability.
+  svc.extToLangId.clear()
+  var langIds: seq[string]
+  for langId in svc.configs.keys:
+    langIds.add(langId)
+  langIds.sort()
+  for langId in langIds:
+    let config = svc.configs[langId]
+    if not config.enabled:
+      continue
+    for ext in config.extensions:
+      let key = ext.toLowerAscii()
+      if key.len == 0:
+        continue
+      if key in svc.extToLangId:
+        logWarn(
+          "lsp",
+          "duplicate extension '." & key & "' registered for '" & langId & "'; keeping '" &
+            svc.extToLangId[key] & "'",
+        )
+        continue
+      svc.extToLangId[key] = langId
+
 proc newLspService*(workspaceRoot: string = ""): LspService =
   ## Create a new LSP service
   result = LspService(
     workers: initTable[string, LspWorker](),
     configs: initTable[string, LanguageServerConfig](),
+    extToLangId: initTable[string, string](),
     capabilities: initTable[string, ServerCapabilities](),
     serverInfo: initTable[string, tuple[name: string, version: Option[string]]](),
     dynamicRegistrations: initTable[string, Table[string, Registration]](),
@@ -248,8 +284,8 @@ proc newLspService*(workspaceRoot: string = ""): LspService =
       (applied: false, failureReason: some("applyEdit not handled")),
   )
 
-  # Default language server configurations
   result.configs = defaultLanguageServerConfigs()
+  result.rebuildExtIndex()
 
 proc resetConfigsToDefaults*(svc: LspService) =
   ## Replace the configs table with a fresh copy of the built-in defaults.
@@ -257,6 +293,7 @@ proc resetConfigsToDefaults*(svc: LspService) =
   ## revert to defaults instead of retaining stale merged state.
   ## Already-running workers keep their old command until they restart.
   svc.configs = defaultLanguageServerConfigs()
+  svc.rebuildExtIndex()
 
 proc setRequestTimeout*(svc: LspService, timeoutMs: int) =
   ## Set the per-request timeout (ms). Non-positive values are ignored.
@@ -266,6 +303,7 @@ proc setRequestTimeout*(svc: LspService, timeoutMs: int) =
 proc setConfig*(svc: LspService, langId: string, config: LanguageServerConfig) =
   ## Set configuration for a language server
   svc.configs[langId] = config
+  svc.rebuildExtIndex()
 
 proc getConfig*(svc: LspService, langId: string): Option[LanguageServerConfig] =
   ## Get configuration for a language server
@@ -286,21 +324,15 @@ proc getLanguageIdFromPath*(svc: LspService, path: string): Option[string] =
   let ext = path.splitFile().ext.strip(chars = {'.'}).toLowerAscii()
   if ext.len == 0:
     return none(string)
-
-  for langId, config in svc.configs:
-    if config.enabled and ext in config.extensions:
-      return some(langId)
-
+  if ext in svc.extToLangId:
+    return some(svc.extToLangId[ext])
   return none(string)
 
 proc getLanguageIdFromExtension*(svc: LspService, ext: string): Option[string] =
   ## Determine language ID from file extension
   let cleanExt = ext.strip(chars = {'.'}).toLowerAscii()
-
-  for langId, config in svc.configs:
-    if config.enabled and cleanExt in config.extensions:
-      return some(langId)
-
+  if cleanExt in svc.extToLangId:
+    return some(svc.extToLangId[cleanExt])
   return none(string)
 
 proc pathToUri*(path: string): string =
@@ -375,7 +407,8 @@ proc startWorker*(svc: LspService, langId: string): Result[LspWorker, string] =
       # The worker thread survived (only the server process died); ask it to
       # spawn a new server on the same thread.
       worker.startServer(
-        config.command, config.args, svc.workspaceRoot, config.initializationOptions
+        config.command, config.args, svc.workspaceRoot, config.initializationOptions,
+        config.settings,
       )
       svc.onLogMessage(langId, mtInfo, "Restarting language server: " & config.command)
       return ok(worker)
@@ -396,7 +429,8 @@ proc startWorker*(svc: LspService, langId: string): Result[LspWorker, string] =
 
   # Start the LSP server
   worker.startServer(
-    config.command, config.args, svc.workspaceRoot, config.initializationOptions
+    config.command, config.args, svc.workspaceRoot, config.initializationOptions,
+    config.settings,
   )
 
   svc.workers[langId] = worker

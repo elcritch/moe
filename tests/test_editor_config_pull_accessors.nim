@@ -25,7 +25,7 @@
 
 import std/[unittest, options, strutils, tables]
 
-import ../src/moepkg/[editor, config, config_loader, buffer, lsp_service]
+import ../src/moepkg/[editor, config, config_loader, lsp_service]
 import ../src/moepkg/buffer/core
 import ../src/moepkg/types/editor_types
 
@@ -277,7 +277,7 @@ suite "Editor - applyConfigSettings live-reload (S1 regression)":
 
   test "mouse setting queues a frontend request":
     let e = mkEditor()
-    discard e.state.takeMouseCaptureRequest()
+    check e.state.takeMouseCaptureRequest() == some(false)
 
     let newCfg = newEditorConfig()
     newCfg.standard.mouse = true
@@ -285,7 +285,7 @@ suite "Editor - applyConfigSettings live-reload (S1 regression)":
 
     let request = e.state.takeMouseCaptureRequest()
     check request.isSome
-    check request.get == true
+    check request.get() == true
     check e.state.takeMouseCaptureRequest().isNone
 
 suite "Editor - applyConfigSettings LSP server configs":

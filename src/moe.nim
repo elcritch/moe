@@ -23,9 +23,8 @@ import pkg/[celina, results, chronos]
 
 import
   moepkg/[
-    editor, editor_window_layout, editor_window_state, handler, modes, logger, cmdline,
-    filer, lsp_integration, config, config_loader, emergency, status_line, key_router,
-    celina_render_target,
+    editor, editor_window_layout, handler, modes, logger, cmdline, lsp_integration,
+    config, config_loader, emergency, key_router, celina_render_target,
   ]
 import moepkg/command_handlers/command_mode_handler
 
@@ -60,7 +59,7 @@ proc pollTerminalWindows*(e: Editor) =
           # so an exit only happens when the user quits the shell itself.
           # Tear down the tab in every case.
           e.closeTerminalBuffer(window.buffer.id)
-          return
+          continue
 
 proc handleStartUpWindows(e: Editor, termWidth, termHeight: int) =
   ## Execute startup window actions on first render when terminal size is known.
@@ -95,22 +94,7 @@ proc emergencySaveAndQuit(
   try:
     savedPaths = editor.emergencySaveBuffers()
 
-    editor.cleanupBackgroundProcesses()
-    # Kill in-flight QuickRun processes and remove their temp files so a crash
-    # doesn't orphan them or leave temp source/build artifacts behind.
-    editor.cleanupQuickRunProcesses()
-    # Kill + reap terminal shells too, so a crash doesn't orphan them.
-    editor.cleanupAllTerminals()
-    # Terminate any pending async git diff subprocesses and free their
-    # tempfiles. Swallow exceptions so a cache cleanup failure can't block
-    # the rest of the emergency shutdown sequence.
-    try:
-      cleanupGitDiffCache()
-    except CatchableError as e:
-      logError("moe", "cleanupGitDiffCache failed: " & e.msg)
-
-    editor.shutdown()
-    editor.savePersistData()
+    editor.releaseExternalResources()
 
     if cmdLineConfig.debugEnabled:
       logError("moe", "Fatal: " & e.msg)
@@ -177,12 +161,9 @@ proc runEditor(
         let shouldContinue = editor.handleEvent(e)
         editor.applyFrontendRequests(app)
 
-        if editor.hasPendingAsyncOperations():
-          # Handle pending async operations (shell commands, :bg)
-          try:
-            await editor.handlePendingAsyncOperations(frontendHooks)
-          except Exception as e:
-            logError("moe", "handlePendingAsyncOperations failed: " & e.msg)
+        # Drain unconditionally: detached async tasks can set pending fields
+        # after handleEvent returns; a guard here would skip that drain.
+        await editor.handlePendingAsyncOperations(frontendHooks)
 
         # Key mapping timeout control — delegated to KeyRouter so policy
         # (enabled/timeoutlen) and accumulator state are queried in one place.
@@ -199,12 +180,14 @@ proc runEditor(
         let shouldContinue = editor.handleKeyMappingTimeout()
         editor.applyFrontendRequests(app)
         app.setApplicationTimeout(0) # One-shot: disable until next prefix match
+        await editor.handlePendingAsyncOperations(frontendHooks)
         return if shouldContinue: trContinue else: trQuit
 
     app.onTickAsync proc(app: AsyncApp): Future[TickResult] {.async.} =
       editorCallback(editor, app, cmdLineConfig, log):
         editor.lsp.poll(0)
         editor.lsp.cleanupStaleProgress()
+        await editor.handlePendingAsyncOperations(frontendHooks)
       return trContinue
 
     app.onRenderAsync proc(buffer: var Buffer) =
@@ -251,31 +234,7 @@ proc runEditor(
       let cursorStyle = toCursorStyle(editor.config.standard.defaultCursor)
       app.setCursorStyle(cursorStyle)
 
-    # Cleanup background processes before exiting
-    editor.cleanupBackgroundProcesses()
-
-    # Kill any in-flight QuickRun processes and remove their temp files (temp
-    # source + build artifacts) so they don't outlive moe.
-    editor.cleanupQuickRunProcesses()
-
-    # Tear down any live terminal PTYs (kill + reap their shells). Terminal
-    # tabs left open at quit never reach closeTerminalBuffer, so without this
-    # their shells would be orphaned instead of cleanly terminated.
-    editor.cleanupAllTerminals()
-
-    # Terminate any pending async git diff subprocesses and free their
-    # tempfiles. Swallow exceptions so a cache cleanup failure can't block
-    # the rest of the shutdown sequence.
-    try:
-      cleanupGitDiffCache()
-    except CatchableError as e:
-      logError("moe", "cleanupGitDiffCache failed: " & e.msg)
-
-    # Shutdown LSP servers before exiting
-    editor.shutdown()
-
-    # Save all persist data
-    editor.savePersistData()
+    editor.releaseExternalResources()
 
     if cmdLineConfig.debugEnabled:
       # Clean up logger
@@ -361,22 +320,7 @@ proc main() =
     # Check if first path is a directory
     if cmdLineConfig.filePaths.len == 1 and dirExists(cmdLineConfig.filePaths[0]):
       # Directory specified - start in Filer mode
-      let dirPath = absolutePath(cmdLineConfig.filePaths[0])
-      editor.state.mode = EditorMode.Filer
-      let activeWin =
-        editor.windowManager.windows[editor.windowManager.activeWindowIndex]
-      activeWin.mode = EditorMode.Filer
-      let filerState = newFilerState(dirPath)
-      # Capture the current position so quitting the filer can restore it.
-      filerState.originCursor = activeWin.cursor
-      filerState.originTopLine = activeWin.viewport.topLine
-      filerState.originLeftColumn = activeWin.viewport.leftColumn
-      activeWin.saveOriginalBuffer()
-      activeWin.modeState = ModeState(kind: mskFiler, filer: filerState)
-      activeWin.buffer = filerState.createFilerTextBuffer(editor.config.filer.showIcons)
-      activeWin.cursor = BufferPosition(line: 0, column: 0)
-      activeWin.viewport.topLine = 0
-      activeWin.viewport.leftColumn = 0
+      editor.enterFilerInActiveWindow(absolutePath(cmdLineConfig.filePaths[0]))
     else:
       # Load first file
       block:

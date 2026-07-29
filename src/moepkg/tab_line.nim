@@ -24,7 +24,7 @@
 
 import std/[options, os, strutils]
 
-import types, buffer, color, unicode_utils, modes, render_target
+import types, buffer/core, color, unicode_utils, modes, render_target
 
 proc toggleTabLine*(state: var EditorState) =
   ## Toggle the visibility of the tab line

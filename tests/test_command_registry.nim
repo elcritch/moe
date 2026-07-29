@@ -75,7 +75,6 @@ suite "CommandRegistry - newCommandRegistry":
   test "creates empty registry":
     let registry = newCommandRegistry()
     check registry.commands.len == 0
-    check registry.aliases.len == 0
 
   test "builtin commands array is initialized":
     let registry = newCommandRegistry()
@@ -151,50 +150,6 @@ suite "CommandRegistry - register":
     check cmd.get.name == "UpUpdated"
     check cmd.get.description == "Second description"
 
-suite "CommandRegistry - registerAlias":
-  test "register alias for builtin command":
-    let registry = newCommandRegistry()
-
-    registry.register(
-      builtin(bcMotionLeft),
-      "Left",
-      "Move left",
-      proc(ctx: CommandContext, args: seq[string]): Result[(), string] =
-        ok(()),
-    )
-
-    registry.registerAlias("h", builtin(bcMotionLeft))
-
-    let cmd = registry.findCommand("h")
-    check cmd.isSome
-    check cmd.get.name == "Left"
-
-  test "register alias with CommandId":
-    let registry = newCommandRegistry()
-
-    registry.register(
-      custom("test.cmd"),
-      "TestCmd",
-      "Test command",
-      proc(ctx: CommandContext, args: seq[string]): Result[(), string] =
-        ok(()),
-    )
-
-    registry.registerAlias("tc", custom("test.cmd"))
-
-    let cmd = registry.findCommand("tc")
-    check cmd.isSome
-    check cmd.get.name == "TestCmd"
-
-  test "alias for non-existent command is not registered":
-    let registry = newCommandRegistry()
-
-    # Try to register alias for command that doesn't exist
-    registry.registerAlias("x", builtin(bcMotionLeft))
-
-    let cmd = registry.findCommand("x")
-    check cmd.isNone
-
 suite "CommandRegistry - findCommand":
   test "find builtin command by CommandId":
     let registry = newCommandRegistry()
@@ -240,23 +195,6 @@ suite "CommandRegistry - findCommand":
     let cmd = registry.findCommand("string.lookup")
     check cmd.isSome
     check cmd.get.name == "StringLookup"
-
-  test "find command by alias":
-    let registry = newCommandRegistry()
-
-    registry.register(
-      builtin(bcEditUndo),
-      "Undo",
-      "Undo edit",
-      proc(ctx: CommandContext, args: seq[string]): Result[(), string] =
-        ok(()),
-    )
-
-    registry.registerAlias("u", builtin(bcEditUndo))
-
-    let cmd = registry.findCommand("u")
-    check cmd.isSome
-    check cmd.get.name == "Undo"
 
   test "find non-existent command returns none":
     let registry = newCommandRegistry()
@@ -389,12 +327,6 @@ suite "CommandRegistry - BuiltinCommandId":
     check $bcModeInsert == "mode.insert"
     check $bcModeCommand == "mode.command"
 
-  test "file commands have correct string values":
-    check $bcFileSave == "file.save"
-    check $bcFileOpen == "file.open"
-    check $bcFileNew == "file.new"
-    check $bcFileClose == "file.close"
-
   test "insert commands have correct string values":
     check $bcInsertChar == "insert.char"
     check $bcInsertBackspace == "insert.backspace"
@@ -429,15 +361,6 @@ suite "CommandRegistry - BuiltinCommandId":
     check $bcFoldCreate == "fold.create"
     check $bcFoldDelete == "fold.delete"
     check $bcFoldDeleteAll == "fold.delete.all"
-
-  test "jump commands have correct string values":
-    check $bcJumpBack == "jump.back"
-    check $bcJumpForward == "jump.forward"
-
-  test "LSP commands have correct string values":
-    check $bcLspGotoDefinition == "lsp.goto.definition"
-    check $bcLspFindReferences == "lsp.find.references"
-    check $bcLspCodeLensExecute == "lsp.codelens.execute"
 
 suite "CommandRegistry - registerBuiltinCommands":
   test "registers all motion commands":
@@ -554,6 +477,7 @@ suite "CommandRegistry - registerBuiltinCommands":
 suite "CommandRegistry - Command execution with context":
   proc createTestContext(buffer: TextBuffer): CommandContext =
     let state = EditorState(activeWindow: EditorWindow(), config: newEditorConfig())
+    state.config.clipboard = ClipboardConfig(enable: false)
     state.cursor = BufferPosition(line: 0, column: 0)
     state.mode = EditorMode.Normal
 
@@ -568,7 +492,6 @@ suite "CommandRegistry - Command execution with context":
       buffer: buffer,
       state: state,
       motionController: motionController,
-      clipboardConfig: ClipboardConfig(enable: false),
       keyBindingRegistry: newKeyBindingRegistry(),
     )
 
@@ -648,29 +571,6 @@ suite "CommandRegistry - Command execution with context":
     check ctx.state.mode == EditorMode.Insert
 
 suite "CommandRegistry - Edge cases":
-  test "multiple aliases for same command":
-    let registry = newCommandRegistry()
-    registry.register(
-      builtin(bcMotionLeft),
-      "Left",
-      "Move left",
-      proc(ctx: CommandContext, args: seq[string]): Result[(), string] =
-        ok(()),
-    )
-
-    registry.registerAlias("h", builtin(bcMotionLeft))
-    registry.registerAlias("left", builtin(bcMotionLeft))
-    registry.registerAlias("cursor-left", builtin(bcMotionLeft))
-
-    check registry.findCommand("h").isSome
-    check registry.findCommand("left").isSome
-    check registry.findCommand("cursor-left").isSome
-
-    # All should resolve to same command
-    check registry.findCommand("h").get.name == "Left"
-    check registry.findCommand("left").get.name == "Left"
-    check registry.findCommand("cursor-left").get.name == "Left"
-
   test "execute with exact min args":
     let registry = newCommandRegistry()
     var receivedArgs: seq[string] = @[]
@@ -737,6 +637,7 @@ suite "CommandRegistry - Edge cases":
 suite "CommandRegistry - readOnly buffer guard":
   proc createReadOnlyTestContext(buffer: TextBuffer): CommandContext =
     let state = EditorState(activeWindow: EditorWindow(), config: newEditorConfig())
+    state.config.clipboard = ClipboardConfig(enable: false)
     state.cursor = BufferPosition(line: 0, column: 0)
     state.mode = EditorMode.Normal
     state.previousMode = EditorMode.LogViewer
@@ -749,7 +650,6 @@ suite "CommandRegistry - readOnly buffer guard":
       buffer: buffer,
       state: state,
       motionController: motionController,
-      clipboardConfig: ClipboardConfig(enable: false),
       keyBindingRegistry: newKeyBindingRegistry(),
     )
 
@@ -860,6 +760,7 @@ suite "findAllCharPositions":
 suite "f/F/t/T highlight - executeCommand sets findCharMatches":
   proc createFindTestContext(buffer: TextBuffer): CommandContext =
     let state = EditorState(activeWindow: EditorWindow(), config: newEditorConfig())
+    state.config.clipboard = ClipboardConfig(enable: false)
     state.cursor = BufferPosition(line: 0, column: 0)
     state.mode = EditorMode.Normal
 
@@ -871,7 +772,6 @@ suite "f/F/t/T highlight - executeCommand sets findCharMatches":
       buffer: buffer,
       state: state,
       motionController: motionController,
-      clipboardConfig: ClipboardConfig(enable: false),
       keyBindingRegistry: newKeyBindingRegistry(),
     )
 
@@ -987,7 +887,7 @@ suite "f/F/t/T highlight - executeCommand sets findCharMatches":
     registerBuiltinCommands(registry)
 
     # Set pending operator (simulate 'd')
-    ctx.state.editState.pendingOperator = some(
+    ctx.state.pendingInput.pendingOperator = some(
       PendingOperator(
         operatorType: OpDelete,
         operatorCount: 1,
@@ -1012,6 +912,7 @@ suite "f/F/t/T highlight - executeCommand sets findCharMatches":
 suite "; / , repeat last find":
   proc createFindTestContext(buffer: TextBuffer): CommandContext =
     let state = EditorState(activeWindow: EditorWindow(), config: newEditorConfig())
+    state.config.clipboard = ClipboardConfig(enable: false)
     state.cursor = BufferPosition(line: 0, column: 0)
     state.mode = EditorMode.Normal
     state.registers = initRegisters()
@@ -1024,7 +925,6 @@ suite "; / , repeat last find":
       buffer: buffer,
       state: state,
       motionController: motionController,
-      clipboardConfig: ClipboardConfig(enable: false),
       keyBindingRegistry: newKeyBindingRegistry(),
     )
 
@@ -1099,7 +999,7 @@ suite "; / , repeat last find":
     )
     check registry.executeCommand(ctx, findC).isOk
     ctx.cursor = BufferPosition(line: 0, column: 0)
-    ctx.state.editState.pendingOperator = some(
+    ctx.state.pendingInput.pendingOperator = some(
       PendingOperator(
         operatorType: OpDelete,
         operatorCount: 1,
@@ -1160,7 +1060,7 @@ suite "; / , repeat last find":
     check ctx.cursor.column == 1 # parked before the first comma
     # d; must advance past the adjacent comma and delete through to just before
     # the next one (b,cd), not collapse to a single char.
-    ctx.state.editState.pendingOperator = some(
+    ctx.state.pendingInput.pendingOperator = some(
       PendingOperator(operatorType: OpDelete, operatorCount: 1, startPos: ctx.cursor)
     )
     check registry.executeCommand(ctx, repeatFind).isOk
@@ -1173,7 +1073,7 @@ suite "; / , repeat last find":
     registerBuiltinCommands(registry)
 
     # 2df, == d2f, : the operator count must fold into the find count.
-    ctx.state.editState.pendingOperator = some(
+    ctx.state.pendingInput.pendingOperator = some(
       PendingOperator(operatorType: OpDelete, operatorCount: 2, startPos: ctx.cursor)
     )
     let findComma = Command(
@@ -1226,7 +1126,7 @@ suite "; / , repeat last find":
     # Cursor at the last column with the operator armed: the missing target
     # must leave the buffer untouched, not delete a spurious range.
     ctx.cursor = BufferPosition(line: 0, column: 2)
-    ctx.state.editState.pendingOperator = some(
+    ctx.state.pendingInput.pendingOperator = some(
       PendingOperator(
         operatorType: OpDelete,
         operatorCount: 1,
@@ -1245,6 +1145,7 @@ suite "CommandRegistry - Git conflict navigation (]x / [x)":
 
   proc createConflictTestContext(buffer: TextBuffer): CommandContext =
     let state = EditorState(activeWindow: EditorWindow(), config: newEditorConfig())
+    state.config.clipboard = ClipboardConfig(enable: false)
     state.cursor = BufferPosition(line: 0, column: 0)
     state.mode = EditorMode.Normal
 
@@ -1256,7 +1157,6 @@ suite "CommandRegistry - Git conflict navigation (]x / [x)":
       buffer: buffer,
       state: state,
       motionController: motionController,
-      clipboardConfig: ClipboardConfig(enable: false),
       keyBindingRegistry: newKeyBindingRegistry(),
     )
 

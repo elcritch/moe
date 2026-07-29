@@ -23,7 +23,8 @@ import std/[options, unicode]
 
 import pkg/results
 
-import ../[types, buffer, modes, key_bindings, motion, command_registry, key_router]
+import ../[types, modes, key_bindings, motion, command_registry, key_router]
+import ../buffer/[core, edit]
 import ../types/editor_types
 import handler_types
 export handler_types
@@ -205,11 +206,8 @@ proc handleReplaceModeKey*(
     state: EditorState,
     keyCombo: KeyCombo,
 ): ReplaceModeResult =
-  ## Main entry point for handling Replace mode key presses
-
-  # Record key for macro if recording is active
-  if state.macroState.isRecording:
-    state.macroState.recordedKeys.add(keyComboToString(keyCombo))
+  ## Main entry point for handling Replace mode key presses.
+  ## Macro recording is captured centrally in `handler.handleKeyCombo`.
 
   # Resolve through the shared built-in decode entry (`resolveBuiltin`), the
   # same path Normal/Visual/Insert use. Replace has no built-in sequences, but a

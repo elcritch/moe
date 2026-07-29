@@ -29,9 +29,9 @@ import pkg/unicodedb/properties
 
 import
   syntax/[
-    tokenizer, syntax_c, syntax_cpp, syntax_csharp, syntax_fish, syntax_haskell,
-    syntax_java, syntax_javascript, syntax_lisp, syntax_nim, syntax_python, syntax_rust,
-    syntax_shell, syntax_typescript, syntax_zsh,
+    tokenizer, syntax_c, syntax_cpp, syntax_csharp, syntax_fish, syntax_go,
+    syntax_haskell, syntax_java, syntax_javascript, syntax_lisp, syntax_lua, syntax_nim,
+    syntax_python, syntax_rust, syntax_shell, syntax_typescript, syntax_zsh,
   ]
 
 type WordDictionary* = CritBitTree[int]
@@ -87,8 +87,28 @@ proc getHaskellKeywords(): seq[string] {.compileTime.} =
   for s in haskellKeywords:
     result.add s
 
+proc getGoKeywords(): seq[string] {.compileTime.} =
+  for s in goKeywords:
+    result.add s
+  for s in goBooleans:
+    result.add s
+  for s in goBuiltins:
+    result.add s
+  for s in goSpecialVars:
+    result.add s
+
 proc getLispKeywords(): seq[string] {.compileTime.} =
   for s in lispKeywords:
+    result.add s
+
+proc getLuaKeywords(): seq[string] {.compileTime.} =
+  for s in luaKeywords:
+    result.add s
+  for s in luaBooleans:
+    result.add s
+  for s in luaBuiltins:
+    result.add s
+  for s in luaSpecialVars:
     result.add s
 
 proc getJavaKeywords(): seq[string] {.compileTime.} =
@@ -152,8 +172,10 @@ const
   CKeywordList = getCKeywords()
   CppKeywordList = getCppKeywords()
   CsharpKeywordList = getCsharpKeywords()
+  GoKeywordList = getGoKeywords()
   HaskellKeywordList = getHaskellKeywords()
   LispKeywordList = getLispKeywords()
+  LuaKeywordList = getLuaKeywords()
   JavaKeywordList = getJavaKeywords()
   JavaScriptKeywordList = getJavaScriptKeywords()
   NimKeywordList = getNimKeywords()
@@ -174,10 +196,14 @@ proc getLanguageKeywords*(lang: SourceLanguage): seq[string] =
     @CppKeywordList
   of langCsharp:
     @CsharpKeywordList
+  of langGo:
+    @GoKeywordList
   of langHaskell:
     @HaskellKeywordList
   of langLisp:
     @LispKeywordList
+  of langLua:
+    @LuaKeywordList
   of langJava:
     @JavaKeywordList
   of langJavaScript, langJsx:

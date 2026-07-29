@@ -24,11 +24,7 @@ import std/[options, tables]
 import pkg/results
 
 import
-  types/editor_types,
-  editor_window_state,
-  editor_lsp,
-  lsp_integration,
-  documentsymbol_viewer
+  types/editor_types, viewer_mode, editor_lsp, lsp_integration, documentsymbol_viewer
 
 const DocumentSymbolValidModes* =
   {EditorMode.Normal, EditorMode.Visual, EditorMode.VisualBlock, EditorMode.VisualLine}
@@ -67,25 +63,7 @@ proc startLspDocumentSymbols*(e: Editor): bool =
 
 proc pollLspDocumentSymbols*(e: Editor) =
   ## Poll for pending document symbols response
-  if not e.lsp.enabled:
-    return
-  if not e.state.lspCache.pending.hasKey(lrfDocumentSymbol):
-    return
-  let ctx = e.state.lspCache.pending[lrfDocumentSymbol]
-
-  # Check for response (events were already polled at the top of tick())
-  let (status, resultOpt, errorOpt) = e.lsp.checkResponse(ctx.requestId)
-
-  case status
-  of lrsPending:
-    discard # Still waiting
-  of lrsSuccess:
-    e.state.lspCache.pending.del(lrfDocumentSymbol)
-    # Drop stale response: buffer switched, edited, or the user moved into an
-    # input mode where forcing DocumentSymbol would hijack input. Overlay is
-    # outside classifyResponse's remit and checked inline.
-    if classifyResponse(e, ctx) != lrsFresh or e.state.overlay.isSome:
-      return
+  e.pollOneShotLspResponse({lrfDocumentSymbol}, "document symbols"):
     if resultOpt.isSome:
       let activeBuffer = e.activeBuffer()
       if activeBuffer.filePath.isNone:
@@ -100,32 +78,15 @@ proc pollLspDocumentSymbols*(e: Editor) =
         e.state.statusMessage = "No symbols found"
         return
 
-      e.state.previousMode = e.state.mode
-      e.setMode(EditorMode.DocumentSymbol)
-      let activeWin = e.activeWindow
-
-      # Capture the current position so quitting the viewer can restore it.
-      viewerState.originCursor = activeWin.cursor
-      viewerState.originTopLine = activeWin.viewport.topLine
-      viewerState.originLeftColumn = activeWin.viewport.leftColumn
-
-      activeWin.saveOriginalBuffer()
-      activeWin.buffer = viewerState.createDocumentSymbolTextBuffer()
-      activeWin.cursor = BufferPosition(line: 0, column: 0)
-      activeWin.viewport.resetViewportTop()
-      activeWin.viewport.leftColumn = 0
-      activeWin.modeState =
-        ModeState(kind: mskDocumentSymbol, documentSymbol: viewerState)
+      discard e.enterViewerMode(
+        EditorMode.DocumentSymbol,
+        ModeState(kind: mskDocumentSymbol, documentSymbol: viewerState),
+        viewerState.createDocumentSymbolTextBuffer(),
+        vpInPlace,
+      )
       e.state.statusMessage = $symbolCount & " symbols found"
     else:
       e.state.statusMessage = "No symbols found"
-  of lrsError:
-    e.state.lspCache.pending.del(lrfDocumentSymbol)
-    if errorOpt.isSome:
-      e.state.statusMessage = "LSP document symbols failed: " & errorOpt.get
-  of lrsTimeout:
-    e.state.lspCache.pending.del(lrfDocumentSymbol)
-    e.state.statusMessage = "LSP document symbols timed out"
 
 proc requestDocumentSymbols*(e: Editor): bool =
   ## Request document symbols (async)

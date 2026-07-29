@@ -21,68 +21,21 @@
 ##
 ## This module provides the data structures and operations for the file explorer mode.
 
-import std/[os, options, algorithm, times, strutils]
+import std/[os, options, times, strutils]
 
-import buffer, highlight, color, render_types
+import buffer/core, highlight, color, dir_scan, render_types
 import syntax/tokenizer
 
 import types/filer_types
 export filer_types
 
-proc isHiddenFile(name: string): bool =
-  ## Check if a file is hidden (starts with .)
-  name.len > 0 and name[0] == '.'
-
 proc isDirectory*(entry: FileEntry): bool =
   ## Check if entry is effectively a directory (including symlinks to directories)
-  entry.kind == fekDirectory or
-    (entry.kind == fekSymlink and entry.targetKind == fekDirectory)
+  isDirectoryLike(entry.kind, entry.targetKind)
 
 proc isFile*(entry: FileEntry): bool =
   ## Check if entry is effectively a file (including symlinks to files)
   entry.kind == fekFile or (entry.kind == fekSymlink and entry.targetKind == fekFile)
-
-proc newFileEntry(path: string, info: FileInfo): FileEntry =
-  ## Create a FileEntry from a path and FileInfo
-  let name = extractFilename(path)
-  var kind: FileEntryKind
-  var targetKind: FileEntryKind = fekFile # Default for non-symlinks
-  var isExec = false
-
-  case info.kind
-  of pcDir:
-    kind = fekDirectory
-    targetKind = fekDirectory
-  of pcLinkToDir:
-    kind = fekSymlink
-    targetKind = fekDirectory
-  of pcLinkToFile:
-    kind = fekSymlink
-    targetKind = fekFile
-  of pcFile:
-    kind = fekFile
-    targetKind = fekFile
-    # Check if file is executable
-    isExec = fpUserExec in info.permissions or fpGroupExec in info.permissions
-
-  FileEntry(
-    name: name,
-    kind: kind,
-    size: info.size,
-    modified: info.lastWriteTime,
-    isHidden: isHiddenFile(name),
-    isExecutable: isExec,
-    targetKind: targetKind,
-  )
-
-proc compareEntries(a, b: FileEntry): int =
-  ## Compare entries for sorting: directories first, then alphabetically
-  if a.kind == fekDirectory and b.kind != fekDirectory:
-    return -1
-  elif a.kind != fekDirectory and b.kind == fekDirectory:
-    return 1
-  else:
-    return cmpIgnoreCase(a.name, b.name)
 
 proc refresh*(state: FilerState) =
   ## Refresh the file list from the current directory
@@ -102,29 +55,9 @@ proc refresh*(state: FilerState) =
       )
     )
 
-  # Read directory contents
-  try:
-    for kind, path in walkDir(state.currentPath):
-      try:
-        let info = getFileInfo(path, followSymlink = false)
-        let entry = newFileEntry(path, info)
-
-        # Filter hidden files if showHidden is false
-        if state.showHidden or not entry.isHidden:
-          state.entries.add(entry)
-      except OSError:
-        # Skip files we can't access
-        discard
-  except OSError:
-    # Directory not accessible
-    discard
-
-  # Sort entries (directories first, then alphabetically)
-  # Keep ".." at the top
-  if state.entries.len > 1:
-    var entriesToSort = state.entries[1 ..^ 1]
-    entriesToSort.sort(compareEntries)
-    state.entries = @[state.entries[0]] & entriesToSort
+  state.entries.add(
+    scanDirectory(state.currentPath, state.showHidden, skipOnStatError = true)
+  )
 
   # Ensure selectedIndex is valid
   if state.selectedIndex >= state.entries.len:
@@ -136,11 +69,7 @@ proc newFilerState*(path: string): FilerState =
   ## Create a new FilerState for the given directory
   let normalizedPath = normalizedPath(absolutePath(expandTilde(path)))
   result = FilerState(
-    currentPath: normalizedPath,
-    entries: @[],
-    selectedIndex: 0,
-    showHidden: true,
-    topLine: 0,
+    currentPath: normalizedPath, entries: @[], selectedIndex: 0, showHidden: true
   )
   result.refresh()
 
@@ -176,7 +105,6 @@ proc moveDown*(state: FilerState) =
 proc moveToFirst*(state: FilerState) =
   ## Move selection to the first entry
   state.selectedIndex = 0
-  state.topLine = 0
 
 proc moveToLast*(state: FilerState) =
   ## Move selection to the last entry
@@ -193,7 +121,6 @@ proc enterDirectory*(state: FilerState, path: string): bool =
   if dirExists(normalizedPath):
     state.currentPath = normalizedPath
     state.selectedIndex = 0
-    state.topLine = 0
     state.refresh()
     true
   else:
@@ -208,7 +135,6 @@ proc goToParent*(state: FilerState): bool =
     let oldDir = extractFilename(state.currentPath)
     state.currentPath = parent
     state.selectedIndex = 0
-    state.topLine = 0
     state.refresh()
 
     # Try to select the directory we came from
@@ -221,40 +147,17 @@ proc goToParent*(state: FilerState): bool =
   else:
     false
 
-proc visibleEntries*(state: FilerState, height: int): seq[FileEntry] =
-  ## Get the visible entries based on current scroll position
-  let startIdx = state.topLine
-  let endIdx = min(state.topLine + height, state.entries.len)
-  if startIdx < state.entries.len:
-    state.entries[startIdx ..< endIdx]
-  else:
-    @[]
-
-proc ensureSelectedVisible*(
-    state: FilerState, viewportHeight: int, reservedLines: int = 1
-) =
-  ## Ensure the selected entry is visible in the viewport
-  ## reservedLines: total lines reserved (status + command share same row)
-  let availableHeight = max(1, viewportHeight - reservedLines)
-
-  if state.selectedIndex < state.topLine:
-    state.topLine = state.selectedIndex
-  elif state.selectedIndex >= state.topLine + availableHeight:
-    state.topLine = state.selectedIndex - availableHeight + 1
-
 proc halfPageDown*(state: FilerState, viewportHeight: int, reservedLines: int = 1) =
   ## Move half a page down
   let availableHeight = max(1, viewportHeight - reservedLines)
   let halfPage = max(1, availableHeight div 2)
   state.selectedIndex = min(state.entries.len - 1, state.selectedIndex + halfPage)
-  state.ensureSelectedVisible(viewportHeight, reservedLines)
 
 proc halfPageUp*(state: FilerState, viewportHeight: int, reservedLines: int = 1) =
   ## Move half a page up
   let availableHeight = max(1, viewportHeight - reservedLines)
   let halfPage = max(1, availableHeight div 2)
   state.selectedIndex = max(0, state.selectedIndex - halfPage)
-  state.ensureSelectedVisible(viewportHeight, reservedLines)
 
 proc deleteSelected*(
     state: FilerState

@@ -38,6 +38,7 @@ import
   editor_display,
   editor_substitute,
   editor_buffers,
+  viewer_mode,
   editor_reload,
   editor_config_reload,
   editor_frame,
@@ -220,32 +221,31 @@ proc newEditor*(editorConfig: EditorConfig, vr: ValidationResult): Editor =
           historyIndex: -1,
         ),
       ),
-      # Macro state (grouped in MacroState)
-      macroState: MacroState(
-        isRecording: false,
-        register: '\0',
-        recordedKeys: @[],
-        registers: initTable[char, seq[string]](),
-        lastRegister: none(char),
-        waitingForRegister: false,
-        commandType: "",
-        pendingCount: 1,
-        playbackDepth: 0,
-      ),
-      lastKeyWasEscape: false, # Track double-Escape for clearing highlight
-      # Edit operation state (grouped in EditState)
-      editState: EditState(
-        lastEditCommand: none(LastEditCommand),
+      pendingInput: PendingInputState(
+        macroState: MacroState(
+          isRecording: false,
+          register: '\0',
+          recordedKeys: @[],
+          registers: initTable[char, seq[string]](),
+          lastRegister: none(char),
+          waitingForRegister: false,
+          commandType: "",
+          pendingCount: 1,
+          playbackDepth: 0,
+        ),
         pendingOperator: none(PendingOperator),
         pendingTextObject: none(PendingTextObject),
+        pendingRegister: none(char),
+      ),
+      lastKeyWasEscape: false,
+      editState: EditState(
+        lastEditCommand: none(LastEditCommand),
         substituteContext: none(SubstituteContext),
         replaceHistory: @[],
         insertModeStartPos: none(BufferPosition),
         visualBlockInsertContext: none(VisualBlockInsertContext),
       ),
-      # Full register system
       registers: initRegisters(),
-      pendingRegister: none(char),
       # Jump list (grouped in JumpListState)
       jumpList: JumpListState(
         list: @[], # Empty jump list initially
@@ -273,14 +273,9 @@ proc newEditor*(editorConfig: EditorConfig, vr: ValidationResult): Editor =
         ),
         inlayHintPoll: initDebouncedLspPoll(500),
         inlayHintCache: InlayHintCache(isValid: false),
-        signatureHelp: SignatureHelpRequestState(
-          lastUpdate: getMonoTime(),
-          interval: 100, # 100ms debounce for signature help
-          cursorLine: -1,
-          cursorColumn: -1,
-          contentVersion: -1,
-          consecutiveErrors: 0,
-        ),
+        signatureHelpPoll: initDebouncedLspPoll(100),
+        # The interval is refreshed from config on every check.
+        autoHoverPoll: initDebouncedLspPoll(0),
       ),
       notificationPopup: newNotificationPopupManager(),
     ),
@@ -337,20 +332,12 @@ proc newEditor*(editorConfig: EditorConfig, vr: ValidationResult): Editor =
     "Default window created, windows.len: " & $result.windowManager.windows.len,
   )
 
-  result.executer = newCommandExecutor(
-    initialBuffer,
-    result.state,
-    initialViewport,
-    result.config.clipboard,
-    result.config.notification,
-    some(cmdRegistry),
-    some(keyRegistry),
-  )
+  result.motionController =
+    newMotionController(initialBuffer, result.state, initialViewport)
 
   result.handlerManager = newHandlerManager(
-    result.executer.motionController, keyRegistry, cmdLineParser, cmdConfig,
-    cmdRegistry, result.config.clipboard, result.config.smoothScroll,
-    result.config.notification, result.lsp,
+    result.motionController, keyRegistry, cmdLineParser, cmdConfig, cmdRegistry,
+    result.lsp,
   )
 
   # Route the initial config push through the reload path so the two lists
@@ -415,9 +402,9 @@ proc enterRecentFileMode*(e: Editor): Result[void, string] =
   let loadResult = state.loadRecentFiles()
   if loadResult.isErr:
     return err(loadResult.error)
-  let recentBuffer = state.createRecentFileTextBuffer()
-  let splitResult = e.vsplitWithBuffer(recentBuffer)
-  if splitResult.isErr:
-    return err(splitResult.error)
-  e.activeWindow.modeState = ModeState(kind: mskRecentFile, recentFile: state)
-  ok()
+  e.enterViewerMode(
+    EditorMode.RecentFile,
+    ModeState(kind: mskRecentFile, recentFile: state),
+    state.createRecentFileTextBuffer(),
+    vpVSplit,
+  )

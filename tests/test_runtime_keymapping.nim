@@ -969,16 +969,18 @@ proc createTestState(mode: EditorMode = EditorMode.Normal): EditorState =
       previousMode: EditorMode.Normal,
     ),
     config: newEditorConfig(),
-    macroState: MacroState(
-      isRecording: false,
-      register: '\0',
-      recordedKeys: @[],
-      registers: initTable[char, seq[string]](),
-      lastRegister: none(char),
-      waitingForRegister: false,
-      commandType: "",
-      pendingCount: 0,
-      playbackDepth: 0,
+    pendingInput: PendingInputState(
+      macroState: MacroState(
+        isRecording: false,
+        register: '\0',
+        recordedKeys: @[],
+        registers: initTable[char, seq[string]](),
+        lastRegister: none(char),
+        waitingForRegister: false,
+        commandType: "",
+        pendingCount: 0,
+        playbackDepth: 0,
+      )
     ),
     registers: initRegisters(),
   )
@@ -1691,22 +1693,12 @@ suite "Nested playback mini processor":
 
 suite "All mapping commands are valid":
   test "All BuiltinCommandId values are registered in CommandRegistry":
-    # Commands dispatched by normal_handler/handler_manager at a higher level.
-    # These require editor-level context (buffer switching, LSP client, etc.)
-    # and are intentionally not registered in CommandRegistry.
-    const dispatchedByHandler = [
-      bcJumpBack, bcJumpForward, bcChangeListPrev, bcChangeListNext, bcBookmarkToggle,
-      bcBookmarkNext, bcBookmarkPrev, bcBookmarkClear, bcFileSave, bcFileOpen,
-      bcFileNew, bcFileClose, bcFiler, bcLspGotoDefinition, bcLspFindReferences,
-      bcLspCodeLensExecute, bcLspCallHierarchyIncoming, bcLspCallHierarchyOutgoing,
-    ]
-
     let cmdRegistry = newCommandRegistry()
     cmdRegistry.registerBuiltinCommands()
 
     var missing: seq[string] = @[]
     for id in BuiltinCommandId:
-      if id == bcNone or id in dispatchedByHandler:
+      if id == bcNone:
         continue
       let cmd = cmdRegistry.findCommand(builtin(id))
       if cmd.isNone or cmd.get.handler.isNil:

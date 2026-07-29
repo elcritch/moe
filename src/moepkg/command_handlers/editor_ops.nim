@@ -34,7 +34,7 @@ import
   ../[
     editor, editor_window_state, editor_window_layout, modes, buffer, logger, types,
     filer, filetree, config_loader, terminal_mode, window_manager, log_viewer,
-    syntax_checker, render_utils, motion,
+    syntax_checker, render_utils, motion, viewer_mode,
   ]
 
 import ./handler_result
@@ -74,11 +74,11 @@ proc updateViewportForCursor*(e: Editor, pos: BufferPosition) =
     activeBuffer = e.activeBuffer()
     lineCount = activeBuffer.len
     cursorPos = CursorPosition(x: pos.column, y: pos.line)
-    lineNumOffset = viewportOffsetFor(activeBuffer, e.state)
+    viewportOffset = viewportOffsetFor(activeBuffer, e.state)
 
   e.handlerManager.motionController.viewportManager.updateViewport(
     cursorPos, lineCount, e.showStatusLine, e.state.windowDisplay.viewportReservedLines,
-    e.lineWrap, activeBuffer, lineNumOffset, e.tabStop,
+    e.lineWrap, activeBuffer, viewportOffset, e.tabStop,
   )
 
 proc processSaveAndQuitResult*(e: Editor, r: HandlerResult): bool =
@@ -205,19 +205,24 @@ proc processSaveResult*(e: Editor, r: HandlerResult, activeBuffer: TextBuffer) =
             e.config.buildOnSave.workspaceRoot.get
           else:
             parentDir(savedPath)
-        e.state.pending.buildOnSave = (
-          path: savedPath,
-          language: activeBuffer.language.ord,
-          customCmd: customCmd,
-          workspaceRoot: workspaceRoot,
+        e.state.pending.add PendingAsyncOp(
+          kind: paoBuild,
+          build: (
+            path: savedPath,
+            language: activeBuffer.language.ord,
+            customCmd: customCmd,
+            workspaceRoot: workspaceRoot,
+          ),
         )
         if e.config.notification.screenNotifications and
             e.config.notification.buildOnSaveScreenNotify:
           e.state.statusMessage = "Building: " & savedPath
       if e.config.syntaxChecker.enable and
           syntaxCheckCommand(savedPath, activeBuffer.language).isOk:
-        e.state.pending.syntaxCheck =
-          (path: savedPath, language: activeBuffer.language.ord)
+        e.state.pending.add PendingAsyncOp(
+          kind: paoSyntaxCheck,
+          syntaxCheck: (path: savedPath, language: activeBuffer.language.ord),
+        )
 
 proc processGotoLineResult*(e: Editor, r: HandlerResult, activeBuffer: TextBuffer) =
   ## Process hrGotoLine: move cursor to the specified line number.
@@ -229,21 +234,24 @@ proc processGotoLineResult*(e: Editor, r: HandlerResult, activeBuffer: TextBuffe
     e.updateViewportForCursor(e.cursor)
 
 proc enterFilerInActiveWindow*(e: Editor, path: string) =
-  ## Switch the active window to Filer mode with the given directory path.
-  e.setMode(EditorMode.Filer)
-  let activeWin = e.activeWindow
-  activeWin.mode = EditorMode.Filer
   let filerState = newFilerState(path)
-  # Capture the current position so quitting the filer can restore it.
-  filerState.originCursor = activeWin.cursor
-  filerState.originTopLine = activeWin.viewport.topLine
-  filerState.originLeftColumn = activeWin.viewport.leftColumn
-  activeWin.saveOriginalBuffer()
-  activeWin.modeState = ModeState(kind: mskFiler, filer: filerState)
-  activeWin.buffer = filerState.createFilerTextBuffer(e.config.filer.showIcons)
-  activeWin.cursor = BufferPosition(line: 0, column: 0)
-  activeWin.viewport.resetViewportTop()
-  activeWin.viewport.leftColumn = 0
+  discard e.enterViewerMode(
+    EditorMode.Filer,
+    ModeState(kind: mskFiler, filer: filerState),
+    filerState.createFilerTextBuffer(e.config.filer.showIcons),
+    vpInPlace,
+  )
+
+proc focusFileTreeWindow*(e: Editor): bool =
+  ## Focus the fileTree sidebar; false when none is open. Used by
+  ## `mode_switch filetree` so it does not go through `toggleFileTree` (which
+  ## would close the sidebar).
+  for i, win in e.windowManager.windows:
+    if win.mode == EditorMode.FileTree:
+      e.windowManager.activateWindow(i)
+      e.syncActiveWindow()
+      return true
+  false
 
 proc toggleFileTree*(e: Editor, pathOpt: Option[string], activeBuffer: TextBuffer) =
   ## Toggle the fileTree sidebar. If one already exists, close it.

@@ -24,10 +24,9 @@
 ## `help_generator` (and its large generated `HelpSentences` const) via the
 ## full `help_viewer` module.
 
-type HelpViewerState* = ref object
-  lines*: seq[string] # Help lines to display
-  selectedIndex*: int # Currently selected line index (cursor position)
-  topLine*: int # Scroll position (first visible line)
+import list_viewer_types
+export list_viewer_types
+
+type HelpViewerState* = ref object of ListViewer[string] ## `items` holds the help lines.
   searchQuery*: string # Current search query
-  waitingForG*: bool # Waiting for second 'g' for 'gg' command
   lastKeyWasEscape*: bool # Waiting for second Escape to clear highlight

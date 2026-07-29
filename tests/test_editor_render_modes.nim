@@ -343,10 +343,10 @@ suite "renderConfig - search highlight with multibyte displayName":
       let maxNameWidth = calcMaxNameWidth(configState.items, buffer.area.width)
 
       configState.selectedIndex = strIdx
-      configState.topLine = strIdx
       configState.setSearchQuery("XY")
       e.windowManager.windows[e.windowManager.activeWindowIndex].modeState =
         ModeState(kind: mskConfig, config: configState)
+      e.activeWindow.viewport.topLine = strIdx
       e.state.input.search.hlsearch = true
       e.state.input.search.hlsearchTempDisabled = false
 
@@ -392,10 +392,10 @@ suite "renderConfig - search highlight with multibyte displayName":
       let maxNameWidth = calcMaxNameWidth(configState.items, buffer.area.width)
 
       configState.selectedIndex = strIdx
-      configState.topLine = strIdx
       configState.setSearchQuery("XY")
       e.windowManager.windows[e.windowManager.activeWindowIndex].modeState =
         ModeState(kind: mskConfig, config: configState)
+      e.activeWindow.viewport.topLine = strIdx
       e.state.input.search.hlsearch = true
       e.state.input.search.hlsearchTempDisabled = false
 
@@ -436,9 +436,9 @@ suite "renderConfig - color value highlight with multibyte displayName":
     let maxNameWidth = calcMaxNameWidth(configState.items, buffer.area.width)
 
     configState.selectedIndex = colorIdx
-    configState.topLine = colorIdx
     e.windowManager.windows[e.windowManager.activeWindowIndex].modeState =
       ModeState(kind: mskConfig, config: configState)
+    e.activeWindow.viewport.topLine = colorIdx
 
     e.renderConfig(buffer, e.activeWindow, true, 0)
 

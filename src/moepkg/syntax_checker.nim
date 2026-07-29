@@ -21,7 +21,7 @@ import std/[strutils, options]
 
 import pkg/[results, chronos, regex]
 
-import background_process, primitives, buffer
+import background_process, primitives, buffer/[core, markers]
 import syntax/tokenizer
 
 import types/syntax_checker_types
@@ -105,9 +105,11 @@ proc startBackgroundSyntaxCheck*(
   )
 
 proc waitForAsync*(
-    bp: SyntaxCheckProcess
-): Future[seq[string]] {.async: (raises: []).} =
-  return await bp.process.waitForAsync()
+    bp: SyntaxCheckProcess, timeout: Duration
+): Future[ProcessOutputResult] {.async: (raises: []).} =
+  ## Wait for the syntax check to complete and return its output. A check still
+  ## running after `timeout` is killed and reported as an error.
+  return await bp.process.waitForAsync(timeout)
 
 proc clearSyntaxMarkers*(b: TextBuffer) =
   ## Clear only SyntaxError and SyntaxWarning markers from the buffer,

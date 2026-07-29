@@ -170,6 +170,77 @@ proc typescriptCorpus(): seq[seq[string]] =
     ],
   ]
 
+proc jsxCorpus(): seq[seq[string]] =
+  ## JSX snippets exercising `jslike.inJsxMode` / `jslike.jsxTagDepth`, which
+  ## plain JS never enters. Covers tag open/close across lines, nested tags,
+  ## expression embedding `{...}` (exits JSX; a `}` followed by `<` re-enters),
+  ## `${...}` template literals nested inside JSX expressions, and fragments.
+  result = @[
+    @[
+      "function App() {", "  return (", "    <div className=\"root\">",
+      "      <h1>Hello</h1>", "      <p>world</p>", "    </div>", "  );", "}",
+    ],
+    # Self-closing tags must not push jsxTagDepth.
+    @[
+      "const view = (", "  <section>", "    <header>", "      <Title />",
+      "    </header>", "    <main>", "      <Item />", "      <Item />", "    </main>",
+      "  </section>", ");",
+    ],
+    @[
+      "const greet = (name) => (", "  <div>", "    <span>Hello, {name}!</span>",
+      "    <span>Count: {items.length}</span>", "  </div>", ");",
+    ],
+    # Nesting: JSX -> `{` expr -> `${...}` template. braceDepthStack must
+    # return the closing `}` to the template, not to JSX.
+    @[
+      "const badge = (n) => (", "  <span title={`count=${n}`}>", "    {`items: ${n}`}",
+      "  </span>", ");",
+    ],
+    # Fragment `<>...</>` + JSX comment + `<` as a less-than operator inside
+    # an expression container (must not mistrigger JSX).
+    @[
+      "const list = (xs) => (", "  <>", "    {/* render items */}",
+      "    {xs.filter((x) => x < 10).map((x) => (", "      <li key={x}>{x}</li>",
+      "    ))}", "  </>", ");",
+    ],
+  ]
+
+proc tsxCorpus(): seq[seq[string]] =
+  ## TSX layers TypeScript's generic `<T>` disambiguation on top of JSX: a `<`
+  ## preceded by an identifier character is a generic, not a tag. Mixes
+  ## `Array<T>`, `useState<number>()`, and `<Component>` so an edit that
+  ## shifts the preceding token must re-classify every downstream `<`.
+  result = @[
+    @[
+      "interface Props { name: string; count: number; }",
+      "const Card: React.FC<Props> = ({ name, count }) => (", "  <div>",
+      "    <span>{name}</span>", "    <b>{count}</b>", "  </div>", ");",
+    ],
+    @[
+      "import { useState } from \"react\";", "export function Counter() {",
+      "  const [n, setN] = useState<number>(0);", "  return (",
+      "    <div onClick={() => setN(n + 1)}>", "      <span>count: {n}</span>",
+      "    </div>", "  );", "}",
+    ],
+    # `<T,>` trailing comma disambiguates a generic arrow from JSX.
+    @[
+      "const first = <T,>(xs: T[]): T | undefined => xs[0];",
+      "const view = (items: number[]) => (", "  <>", "    {items.map((x: number) => (",
+      "      <li key={x}>{first<number>([x])}</li>", "    ))}", "  </>", ");",
+    ],
+    @[
+      "const rows: Array<string> = [\"a\", \"b\"];", "const table = (", "  <table>",
+      "    {rows.map((r) => (", "      <tr title={`row=${r}`}><td>{r}</td></tr>",
+      "    ))}", "  </table>", ");",
+    ],
+    # `@decorator` is TS-only and must not perturb the following JSX.
+    @[
+      "@Component({ selector: \"app-root\" })", "class Root {", "  render() {",
+      "    return (", "      <section>", "        <h2>title</h2>", "      </section>",
+      "    );", "  }", "}",
+    ],
+  ]
+
 proc markdownCorpus(): seq[seq[string]] =
   ## Markdown snippets covering the state-heavy multi-line constructs:
   ## frontmatter (---...---), fenced and indented code blocks, and math
@@ -574,6 +645,121 @@ proc tclCorpus(): seq[seq[string]] =
     @["# a comment", "set cont \"a \\", "b\"", "foreach i {1 2 3} {puts $i}"],
   ]
 
+proc goCorpus(): seq[seq[string]] =
+  ## Go raw strings (backtick-delimited) span lines and resume through
+  ## `g.state == gtLongStringLit`, so an edit to the opening backtick has to
+  ## re-colour every line to the matching terminator. Also covers block
+  ## comments across lines, interpreted strings with escapes (line-bounded),
+  ## rune literals, and prefixed / hex-exponent numbers with `_` separators.
+  result = @[
+    @[
+      "package main", "", "import \"fmt\"", "",
+      "func main() { fmt.Println(\"hello\", 0xFF, 1_000) }",
+    ],
+    @[
+      "package p", "var doc = `raw", "multi line", "value` + \"end\"",
+      "const c = 0b1010",
+    ],
+    @[
+      "/* block", " * comment body */", "func f() int { return 0o755 }", "",
+      "// line comment",
+    ],
+    @[
+      "package p", "var s = \"tab\\there\\x41\"", "var r = '\\u0041'",
+      "for i := 0; i < 3; i++ { _ = i }", "var h = 0x1p-4",
+    ],
+    # Adversarial raw-string shapes: nested-looking backticks (Go does not
+    # nest — the first ` closes), an empty raw string, and an opening
+    # delimiter with nothing after it on its line.
+    @["var a = `outer ` + \"middle\" + `still`", "var b = ``", "var c = `", "", "`"],
+    # Interpreted strings are line-bounded, so a trailing backslash ends the
+    # string and the next line resumes as code.
+    @[
+      "package p", "var s = \"trailing \\", "still code here", "var n = len(s)",
+      "func g() {}",
+    ],
+  ]
+
+proc luaCorpus(): seq[seq[string]] =
+  ## Lua long brackets are the interesting part: `[[ ]]` strings and
+  ## `--[==[ ]==]` comments span lines and resume through
+  ## `lang.lua.longBracketLevel`, so an edit to the opening delimiter has to
+  ## re-colour every line to the matching terminator. Also covers quoted
+  ## strings with escapes (line-bounded), `::labels::`, hex/exponent numbers
+  ## and the `#` length operator.
+  result = @[
+    @[
+      "local function greet(name)", "  print(\"Hello, \" .. name)", "end",
+      "greet('world')",
+    ],
+    @[
+      "local doc = [[", "multi line", "long string]]", "local n = #doc",
+      "print(n, 0xFF, 1e-3)",
+    ],
+    @[
+      "--[==[ a long", "comment body ]] not the end", "]==]", "local t = {1, 2, 3}",
+      "for i, v in ipairs(t) do print(i, v) end",
+    ],
+    @[
+      "-- a line comment", "local s = \"tab\\there\\65\"", "::top::",
+      "if x ~= nil then goto top end", "local h = 0x1p-4",
+    ],
+    # Adversarial long-bracket shapes: a `]]` that does not terminate a
+    # levelled bracket, an empty long comment, an opening delimiter with
+    # nothing after it on its line, and a nested-looking `[[` (Lua does not
+    # nest — the first matching close wins).
+    @[
+      "local a = [=[ ]] still inside", "]] and still", "]=]", "local b = --[[]] 1",
+      "local c = [[", "", "]]",
+    ],
+    # Quoted strings are line-bounded, so a trailing backslash ends the string
+    # and the next line resumes as code. The `#!` shebang and a bare `#`
+    # length operator share a first byte and must not be confused by an edit.
+    @[
+      "#!/usr/bin/lua", "local s = \"trailing \\", "still code here", "local n = #s",
+      "return n",
+    ],
+  ]
+
+proc commitEditMsgCorpus(): seq[seq[string]] =
+  ## COMMIT_EDITMSG snippets exercising the per-file `commit.subjectSeen`
+  ## flag and the mid-line Conventional Commits / trailer sub-token machines.
+  ## `subjectSeen` only flips on the first non-comment, non-empty line, so
+  ## edits that swap a subject line for a comment (or vice versa) must
+  ## reparse the whole rest of the message — the class of divergence this
+  ## fuzz targets. Snippets cover: full conventional (scope + bang), body +
+  ## trailers, comment/status-marker prelude before the subject, comments and
+  ## empty lines only (subject never appears), non-conventional plain
+  ## subject, and subject immediately followed by a trailer.
+  result = @[
+    @[
+      "feat(auth)!: rework login flow", "",
+      "BREAKING CHANGE: sessions are now stateless.",
+      "Signed-off-by: Dev <dev@example.com>",
+    ],
+    @[
+      "fix(parser): handle empty input", "",
+      "Previously crashed on an empty file; now returns Ok(None).", "Refs: #123",
+      "Reviewed-by: Alice <alice@example.com>",
+    ],
+    @[
+      "# Please enter the commit message for your changes.", "#", "# On branch develop",
+      "# Changes to be committed:", "#\tmodified:   src/main.nim", "#",
+      "docs: update readme",
+    ],
+    @[
+      "#",
+      "# Please enter the commit message. Lines starting with '#' will be ignored.",
+      "#", "# On branch main", "# Untracked files:", "#\tnotes.txt",
+    ],
+    @[
+      "Fix the offset regression", "",
+      "The previous version dropped chars past the newline.",
+      "Signed-off-by: Bob <bob@example.com>",
+    ],
+    @["chore: bump version", "Signed-off-by: Bot <bot@example.com>"],
+  ]
+
 # Random edits
 
 const PrintableAscii =
@@ -850,6 +1036,12 @@ suite "Incremental Highlight Fuzz":
   test "TypeScript: incremental output matches full reparse under random edits":
     check runFuzz(SourceLanguage.langTypeScript, typescriptCorpus(), iters, baseSeed)
 
+  test "JSX: incremental output matches full reparse under random edits":
+    check runFuzz(SourceLanguage.langJsx, jsxCorpus(), iters, baseSeed)
+
+  test "TSX: incremental output matches full reparse under random edits":
+    check runFuzz(SourceLanguage.langTsx, tsxCorpus(), iters, baseSeed)
+
   test "Markdown: incremental output matches full reparse under random edits":
     check runFuzz(SourceLanguage.langMarkdown, markdownCorpus(), iters, baseSeed)
 
@@ -894,6 +1086,17 @@ suite "Incremental Highlight Fuzz":
 
   test "Tcl: incremental output matches full reparse under random edits":
     check runFuzz(SourceLanguage.langTcl, tclCorpus(), iters, baseSeed)
+
+  test "Go: incremental output matches full reparse under random edits":
+    check runFuzz(SourceLanguage.langGo, goCorpus(), iters, baseSeed)
+
+  test "Lua: incremental output matches full reparse under random edits":
+    check runFuzz(SourceLanguage.langLua, luaCorpus(), iters, baseSeed)
+
+  test "CommitEditMsg: incremental output matches full reparse under random edits":
+    check runFuzz(
+      SourceLanguage.langCommitEditMsg, commitEditMsgCorpus(), iters, baseSeed
+    )
 
 # Deterministic chunk-boundary tests
 #
@@ -1043,6 +1246,34 @@ suite "Incremental Highlight Line-Bounded Strings":
   test "Tcl: escape ending at EOL does not emit an empty token":
     check checkResumeEquivalence(EscapeBeforeEol, 3, "cd /tmp", langTcl, "tcl esc")
 
+  test "Go: editing below a multi-line raw string resumes inside it":
+    let buf = @["var doc = `", "line one", "line two", "line three`", "var _ = doc"]
+    check checkResumeEquivalence(buf, 2, "edited line", langGo, "go raw string")
+
+  test "Go: editing below a multi-line block comment resumes inside it":
+    let buf = @["/* opens", "still body", "more body", "still body */", "var x = 1"]
+    check checkResumeEquivalence(buf, 2, "edited line", langGo, "go block comment")
+
+  test "Go: escape ending at EOL does not emit an empty token":
+    let buf = @["var s = \"a \\", "more\"", "var n = len(s)", "var _ = n", "var _ = s"]
+    check checkResumeEquivalence(buf, 3, "var y = 1", langGo, "go esc")
+
+  test "Lua: editing inside a levelled long comment keeps the bracket level":
+    # The reparse enters line 3 from its cached boundary state, which must
+    # still carry `longBracketLevel == 2` — otherwise the `]]` on line 2 is
+    # mistaken for the terminator and everything below is re-coloured as code.
+    let buf =
+      @["--[==[ open", "a ]] not the end", "b ]] still not", "]==]", "local x = 1"]
+    check checkResumeEquivalence(buf, 2, "c ]=] nor this", langLua, "lua long comment")
+
+  test "Lua: editing below a multi-line long string resumes inside it":
+    let buf = @["local doc = [[", "line one", "line two", "line three]]", "print(doc)"]
+    check checkResumeEquivalence(buf, 2, "edited line", langLua, "lua long string")
+
+  test "Lua: escape ending at EOL does not emit an empty token":
+    let buf = @["local s = \"a \\", "more\"", "local n = #s", "print(n)", "return s"]
+    check checkResumeEquivalence(buf, 3, "print(1)", langLua, "lua esc")
+
   test "Tcl: an unclosed ${ brace reference is line-bounded":
     # `${some_var` (no closing brace) must not swallow the newline into one
     # gtSpecialVar token; the lines below resume as code, not variable.
@@ -1097,6 +1328,8 @@ suite "Monotonic-advance guard":
       (SourceLanguage.langNim, nimCorpus()),
       (SourceLanguage.langJavaScript, javascriptCorpus()),
       (SourceLanguage.langTypeScript, typescriptCorpus()),
+      (SourceLanguage.langJsx, jsxCorpus()),
+      (SourceLanguage.langTsx, tsxCorpus()),
       (SourceLanguage.langMarkdown, markdownCorpus()),
       (SourceLanguage.langPython, pythonCorpus()),
       (SourceLanguage.langLatex, latexCorpus()),
@@ -1110,6 +1343,8 @@ suite "Monotonic-advance guard":
       (SourceLanguage.langZsh, zshCorpus()),
       (SourceLanguage.langFish, fishCorpus()),
       (SourceLanguage.langTcl, tclCorpus()),
+      (SourceLanguage.langLua, luaCorpus()),
+      (SourceLanguage.langGo, goCorpus()),
     ]
     for (lang, corpus) in corpora:
       for buf in corpus:

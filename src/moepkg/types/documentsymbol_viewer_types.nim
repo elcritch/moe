@@ -25,7 +25,6 @@
 ## is still required for `SymbolKind`.
 
 import ../lsp/protocol/enums
-import ../primitives
 import list_viewer_types
 export list_viewer_types
 
@@ -39,10 +38,5 @@ type
     depth*: int # Nesting depth for indentation
 
   DocumentSymbolViewerState* = ref object of ListViewer[SymbolItem]
-    ## items/selectedIndex/topLine/waitingForG/title are inherited.
+    ## items/selectedIndex/waitingForG/title are inherited.
     filePath*: string # File path for the symbols
-    # Cursor/viewport of the underlying buffer captured on entry, so quitting
-    # the viewer restores the position instead of leaving it at (0, 0).
-    originCursor*: BufferPosition
-    originTopLine*: int
-    originLeftColumn*: int

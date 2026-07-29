@@ -399,26 +399,37 @@ suite "Highlight - Segment Operations":
     check idx >= 0
     check idx < h.colorSegments.len
 
-  test "segment overlap detection":
-    let seg1 = ColorSegment(
-      firstRow: 0,
-      firstColumn: 0,
-      lastRow: 0,
-      lastColumn: 10,
-      color: EditorColorPairIndex.default,
-      style: defaultStyle,
+  test "overwrite splits an overlapping segment at the boundary":
+    var h = Highlight(
+      colorSegments: @[
+        ColorSegment(
+          firstRow: 0,
+          firstColumn: 0,
+          lastRow: 0,
+          lastColumn: 10,
+          color: EditorColorPairIndex.default,
+          style: defaultStyle,
+        )
+      ]
     )
-    let seg2 = ColorSegment(
-      firstRow: 0,
-      firstColumn: 5,
-      lastRow: 0,
-      lastColumn: 15,
-      color: EditorColorPairIndex.keyword,
-      style: defaultStyle,
+    h.overwrite(
+      ColorSegment(
+        firstRow: 0,
+        firstColumn: 5,
+        lastRow: 0,
+        lastColumn: 15,
+        color: EditorColorPairIndex.keyword,
+        style: defaultStyle,
+      )
     )
 
-    # These should overlap
-    check (seg1.lastRow, seg1.lastColumn) >= (seg2.firstRow, seg2.firstColumn)
+    check h.colorSegments.len == 2
+    check h.colorSegments[0].color == EditorColorPairIndex.default
+    check h.colorSegments[0].firstColumn == 0
+    check h.colorSegments[0].lastColumn == 4
+    check h.colorSegments[1].color == EditorColorPairIndex.keyword
+    check h.colorSegments[1].firstColumn == 5
+    check h.colorSegments[1].lastColumn == 10
 
   test "highlight length and high":
     let buffer = @["line1".toRunes, "line2".toRunes]
@@ -879,13 +890,14 @@ proc loadProgressiveScalarFixture(filename: string, scalarLines = 1200): TextBuf
   ## fires (the stored boundary state at the chunk edge is gtLongStringLit).
   result = newTextBuffer()
   let path = getTempDir() / filename
+  defer:
+    removeFile(path)
   var content = "top: value\nscalar: |\n"
   for i in 0 ..< scalarLines:
     content.add("  block scalar line " & $i & "\n")
   content.add("after: tail\n")
   writeFile(path, content)
   discard result.loadFile(path)
-  removeFile(path)
 
 suite "Highlight - YAML internal chunk boundary handoff":
   # updateHighlightIncremental parses in ChunkSize=100 chunks and feeds each
@@ -1034,12 +1046,13 @@ suite "Highlight - YAML internal chunk boundary handoff":
     # searches rely on).
     var buf = newTextBuffer()
     let path = getTempDir() / "moe_test_yaml_edit_during_load.yaml"
+    defer:
+      removeFile(path)
     var content = ""
     for i in 0 ..< 2500:
       content.add("key" & $i & ": value" & $i & "\n")
     writeFile(path, content)
     discard buf.loadFile(path)
-    removeFile(path)
     check buf.incrementalHighlight.parsedUpTo < buf.len - 1
 
     # Edit while the progressive load is still behind.
@@ -1110,6 +1123,8 @@ suite "Highlight - early tokenizer stop keeps the line-state cache consistent":
     # tick read states[999] out of bounds — on every frame, killing the load.
     var buf = newTextBuffer()
     let path = getTempDir() / "moe_test_yaml_nul_progressive.yaml"
+    defer:
+      removeFile(path)
     var content = ""
     for i in 0 ..< 1500:
       if i == 10:
@@ -1118,7 +1133,6 @@ suite "Highlight - early tokenizer stop keeps the line-state cache consistent":
         content.add("key" & $i & ": value" & $i & "\n")
     writeFile(path, content)
     discard buf.loadFile(path)
-    removeFile(path)
 
     while buf.continueInitialHighlight():
       discard
@@ -1162,6 +1176,7 @@ suite "Highlight - diagnostics survive progressive load":
         message: "test error",
       )
     ]
+    buf.diagnosticsDirty = true
     buf.highlightNeedsUpdate = true
     buf.updateHighlight()
     check buf.highlight.getSegmentModifiers(500, 2) == {rt.StyleModifier.Undercurl}
@@ -1173,15 +1188,15 @@ suite "Highlight - diagnostics survive progressive load":
       discard
     check buf.highlight.getSegmentModifiers(500, 2) == {rt.StyleModifier.Undercurl}
 
-  test "continueUriScan does not bake diagnostic styling into the cache":
-    # Regression: reassigning incrementalHighlight.segments from
-    # b.highlight.colorSegments would carry over any diagnostic-styled
-    # segments applied earlier in the same frame; a later incremental
-    # update would then surface them as stale undercurls after the
-    # diagnostics themselves are cleared.
+  test "clearing diagnostics leaves no residual styling after URI scan rewind":
+    # End-to-end: rewinding continueUriScan, then clearing diagnostics and
+    # editing far from the affected line, must leave the old diagnostic line
+    # with no undercurl and no syntaxCheck* colour.
     var buf = newTextBuffer()
 
     let path = getTempDir() / "test_uri_scan_diag_no_bake.rs"
+    defer:
+      removeFile(path)
     var content = ""
     for i in 0 ..< 500:
       if i == 250:
@@ -1190,16 +1205,12 @@ suite "Highlight - diagnostics survive progressive load":
         content.add("let x = " & $i & ";\n")
     writeFile(path, content)
     discard buf.loadFile(path)
-    removeFile(path)
 
     while buf.continueInitialHighlight():
       discard
     while buf.continueUriScan():
       discard
 
-    # Diagnostic on line 100, far from both the URI (line 250) and the edit
-    # point below — otherwise the incremental re-parse would splice fresh
-    # segments over line 100 and mask a stale-cache bug.
     buf.diagnostics = @[
       BufferDiagnostic(
         startLine: 100,
@@ -1210,21 +1221,17 @@ suite "Highlight - diagnostics survive progressive load":
         message: "test error",
       )
     ]
+    buf.diagnosticsDirty = true
     buf.highlightNeedsUpdate = true
     buf.updateHighlight()
     check rt.StyleModifier.Undercurl in buf.highlight.getSegmentModifiers(100, 2)
 
-    # Rewind the URI scan and re-process the chunk that already carries the
-    # diagnostic style — the same path an edit-triggered rewind takes.
     buf.uriScanParsedUpTo = -1
     discard buf.continueUriScan()
 
-    # LSP publishDiagnostics{[]} clears diagnostics.
     buf.diagnostics.setLen(0)
+    buf.diagnosticsDirty = true
 
-    # Edit near end-of-file so the incremental re-parse converges quickly
-    # and does not touch line 100 — the cached segment there is the only
-    # source of styling for the next b.highlight rebuild.
     buf.lastChangedLines = 490
     buf.highlightNeedsUpdate = true
     buf.updateHighlight()
@@ -1240,18 +1247,6 @@ suite "Highlight - JS/TS String Line Bounding":
   # a line's tokens may depend only on the tokenizer state at the line's
   # start, never on later lines, or incremental re-parsing (which resumes
   # from per-line states) diverges from a full reparse.
-  proc checkIncrMatchesFull(
-      buffer: seq[string], ih: IncrementalHighlight, lang: SourceLanguage
-  ) =
-    let incrResult = Highlight(colorSegments: ih.segments)
-    var runesBuffer: seq[Runes]
-    for line in buffer:
-      runesBuffer.add(line.toRunes)
-    let fullResult = initHighlight(runesBuffer, @[], lang)
-    for row in 0 ..< buffer.len:
-      for col in 0 ..< buffer[row].len:
-        check incrResult.getColorPair(row, col) == fullResult.getColorPair(row, col)
-
   proc runEditBelow(
       lang: SourceLanguage, buffer0: seq[string], editRow: int, newLine: string
   ) =
@@ -1270,7 +1265,7 @@ suite "Highlight - JS/TS String Line Bounding":
       @[],
       lang,
     )
-    checkIncrMatchesFull(buffer, ih, lang)
+    checkMatchesFullParse(buffer, ih, lang)
 
   proc runColonBelowString(lang: SourceLanguage) =
     # Fuzz seed 180608 shape: an unterminated string on row 0 with a closing
@@ -1293,7 +1288,7 @@ suite "Highlight - JS/TS String Line Bounding":
       @[],
       lang,
     )
-    checkIncrMatchesFull(buffer, ih, lang)
+    checkMatchesFullParse(buffer, ih, lang)
     # Row 0's string must stay a string: its color may not depend on row 4.
     check Highlight(colorSegments: ih.segments).getColorPair(0, 4) ==
       EditorColorPairIndex.stringLit
@@ -1407,6 +1402,18 @@ suite "Highlight - detectLanguage":
 
   test "detectLanguage for Tcl .itk":
     check detectLanguage("widget.itk") == SourceLanguage.langTcl
+
+  test "detectLanguage for Go .go":
+    check detectLanguage("main.go") == SourceLanguage.langGo
+
+  test "detectLanguage for Lua .lua":
+    check detectLanguage("init.lua") == SourceLanguage.langLua
+
+  test "detectLanguage for Lua .luau":
+    check detectLanguage("script.luau") == SourceLanguage.langLua
+
+  test "detectLanguage for Lua .rockspec":
+    check detectLanguage("mylib-1.0-1.rockspec") == SourceLanguage.langLua
 
   test "detectLanguage for Zsh .zsh":
     check detectLanguage("script.zsh") == SourceLanguage.langZsh
@@ -2030,79 +2037,6 @@ suite "Highlight - overwrite":
     check h.colorSegments[1].firstColumn == 20
     check h.colorSegments[1].color == EditorColorPairIndex.default
 
-suite "Highlight - overwriteBatch":
-  proc seg(fr, fc, lr, lc: int, color = EditorColorPairIndex.default): ColorSegment =
-    ColorSegment(
-      firstRow: fr,
-      firstColumn: fc,
-      lastRow: lr,
-      lastColumn: lc,
-      color: color,
-      style: defaultStyle,
-    )
-
-  # overwriteBatch must produce exactly what a sequential overwrite loop does
-  # for disjoint, sorted overlays.
-  proc sequential(base, overlays: seq[ColorSegment]): seq[ColorSegment] =
-    var h = Highlight(colorSegments: base)
-    for ov in overlays:
-      h.overwrite(ov)
-    h.colorSegments
-
-  proc batched(base, overlays: seq[ColorSegment]): seq[ColorSegment] =
-    var h = Highlight(colorSegments: base)
-    h.overwriteBatch(overlays)
-    h.colorSegments
-
-  test "Empty overlays leaves segments unchanged":
-    let base = @[seg(0, 0, 0, 20)]
-    check batched(base, @[]) == base
-
-  test "Multiple disjoint overlays on a single wide segment":
-    let base = @[seg(0, 0, 0, 100, EditorColorPairIndex.default)]
-    let overlays = @[
-      seg(0, 5, 0, 10, EditorColorPairIndex.syntaxCheckErr),
-      seg(0, 20, 0, 25, EditorColorPairIndex.syntaxCheckWarn),
-      seg(0, 40, 0, 40, EditorColorPairIndex.syntaxCheckInfo),
-    ]
-    check batched(base, overlays) == sequential(base, overlays)
-
-  test "Overlay spanning multiple base segments":
-    let base = @[
-      seg(0, 0, 0, 10, EditorColorPairIndex.default),
-      seg(1, 0, 1, 10, EditorColorPairIndex.keyword),
-      seg(2, 0, 2, 10, EditorColorPairIndex.default),
-    ]
-    let overlays = @[seg(0, 5, 2, 5, EditorColorPairIndex.syntaxCheckErr)]
-    check batched(base, overlays) == sequential(base, overlays)
-
-  test "Multiple overlays each spanning several segments":
-    var base: seq[ColorSegment]
-    for r in 0 ..< 10:
-      base.add(seg(r, 0, r, 15, EditorColorPairIndex.default))
-    let overlays = @[
-      seg(0, 3, 1, 8, EditorColorPairIndex.syntaxCheckErr),
-      seg(3, 0, 3, 15, EditorColorPairIndex.syntaxCheckWarn),
-      seg(5, 10, 7, 2, EditorColorPairIndex.syntaxCheckHint),
-    ]
-    check batched(base, overlays) == sequential(base, overlays)
-
-  test "Overlay starting at column 0 of a later row":
-    let base = @[seg(0, 0, 3, 20, EditorColorPairIndex.default)]
-    let overlays = @[seg(2, 0, 2, 5, EditorColorPairIndex.syntaxCheckErr)]
-    check batched(base, overlays) == sequential(base, overlays)
-
-  test "Overlays in gaps between non-contiguous segments":
-    let base = @[
-      seg(0, 0, 0, 10, EditorColorPairIndex.default),
-      seg(5, 0, 5, 10, EditorColorPairIndex.default),
-    ]
-    let overlays = @[
-      seg(0, 2, 0, 4, EditorColorPairIndex.syntaxCheckErr),
-      seg(5, 6, 5, 8, EditorColorPairIndex.syntaxCheckWarn),
-    ]
-    check batched(base, overlays) == sequential(base, overlays)
-
 suite "Highlight - Progressive Initial Highlighting":
   test "continueInitialHighlight parses remaining lines":
     # A buffer larger than InitialChunkSize (1000 lines) should be
@@ -2111,12 +2045,13 @@ suite "Highlight - Progressive Initial Highlighting":
 
     # Create a temp file with 2500 lines of Rust code
     let path = getTempDir() / "test_progressive_highlight.rs"
+    defer:
+      removeFile(path)
     var content = ""
     for i in 0 ..< 2500:
       content.add("let v" & $i & " = " & $i & ";\n")
     writeFile(path, content)
     discard buf.loadFile(path)
-    removeFile(path)
 
     # After loadFile, only first 1000 lines should be parsed
     check buf.incrementalHighlight != nil
@@ -2143,6 +2078,8 @@ suite "Highlight - Progressive Initial Highlighting":
     var buf = newTextBuffer()
 
     let path = getTempDir() / "moe_test_progressive_cdata.xml"
+    defer:
+      removeFile(path)
     var
       content = ""
       lines: seq[string]
@@ -2158,7 +2095,6 @@ suite "Highlight - Progressive Initial Highlighting":
       content.add(line & "\n")
     writeFile(path, content)
     discard buf.loadFile(path)
-    removeFile(path)
 
     check buf.language == SourceLanguage.langXml
     check buf.incrementalHighlight.parsedUpTo == 999
@@ -2191,6 +2127,8 @@ suite "Highlight - URI Underline on Load":
     var buf = newTextBuffer()
 
     let path = getTempDir() / "test_uri_highlight_initial.rs"
+    defer:
+      removeFile(path)
     var content = ""
     for i in 0 ..< 10:
       if i == 5:
@@ -2199,7 +2137,6 @@ suite "Highlight - URI Underline on Load":
         content.add("let v" & $i & " = " & $i & ";\n")
     writeFile(path, content)
     discard buf.loadFile(path)
-    removeFile(path)
 
     # Line 5 contains a URI; it should have Underline modifier
     let uriCol = "// see ".len
@@ -2210,6 +2147,8 @@ suite "Highlight - URI Underline on Load":
     var buf = newTextBuffer()
 
     let path = getTempDir() / "test_uri_highlight_plain.txt"
+    defer:
+      removeFile(path)
     var content = ""
     for i in 0 ..< 10:
       if i == 3:
@@ -2218,7 +2157,6 @@ suite "Highlight - URI Underline on Load":
         content.add("plain line " & $i & "\n")
     writeFile(path, content)
     discard buf.loadFile(path)
-    removeFile(path)
 
     let uriCol = "visit ".len
     let mods = buf.highlight.getSegmentModifiers(3, uriCol)
@@ -2229,6 +2167,8 @@ suite "Highlight - URI Underline on Load":
 
     # Create file with URI beyond line 1000
     let path = getTempDir() / "test_uri_highlight_progressive.rs"
+    defer:
+      removeFile(path)
     var content = ""
     for i in 0 ..< 1500:
       if i == 1200:
@@ -2237,7 +2177,6 @@ suite "Highlight - URI Underline on Load":
         content.add("let v" & $i & " = " & $i & ";\n")
     writeFile(path, content)
     discard buf.loadFile(path)
-    removeFile(path)
 
     # After loadFile, only first 1000 lines are scanned for URIs
     check buf.uriScanParsedUpTo == 999
@@ -2258,6 +2197,8 @@ suite "Highlight - URI Underline on Load":
 
     # Create plain text file with URI beyond line 1000
     let path = getTempDir() / "test_uri_highlight_plain_progressive.txt"
+    defer:
+      removeFile(path)
     var content = ""
     for i in 0 ..< 1500:
       if i == 1200:
@@ -2266,7 +2207,6 @@ suite "Highlight - URI Underline on Load":
         content.add("plain line " & $i & "\n")
     writeFile(path, content)
     discard buf.loadFile(path)
-    removeFile(path)
 
     # After loadFile, only first 1000 lines are scanned for URIs
     check buf.uriScanParsedUpTo == 999
@@ -2285,6 +2225,8 @@ suite "Highlight - URI Underline on Load":
 
     # Create file with URIs at line 5 and line 1500
     let path = getTempDir() / "test_uri_restore_before_edit.rs"
+    defer:
+      removeFile(path)
     var content = ""
     for i in 0 ..< 2000:
       if i == 5:
@@ -2295,7 +2237,6 @@ suite "Highlight - URI Underline on Load":
         content.add("let x = " & $i & ";\n")
     writeFile(path, content)
     discard buf.loadFile(path)
-    removeFile(path)
 
     # Complete initial highlighting and URI scan
     while buf.continueInitialHighlight():
@@ -2328,12 +2269,13 @@ suite "Highlight - URI Underline on Load":
 
     # Create file with no URIs, 1500 lines
     let path = getTempDir() / "test_uri_scan_no_uri.rs"
+    defer:
+      removeFile(path)
     var content = ""
     for i in 0 ..< 1500:
       content.add("let x = " & $i & ";\n")
     writeFile(path, content)
     discard buf.loadFile(path)
-    removeFile(path)
 
     # Complete initial highlighting
     while buf.continueInitialHighlight():
@@ -2346,10 +2288,11 @@ suite "Highlight - URI Underline on Load":
     var buf = newTextBuffer()
 
     let path = getTempDir() / "test_uri_highlight_update.rs"
+    defer:
+      removeFile(path)
     var content = "let x = 1;\nlet y = 2;\nlet z = 3;\n"
     writeFile(path, content)
     discard buf.loadFile(path)
-    removeFile(path)
 
     # Edit line 1 to contain a URI
     discard buf.beginTransaction()
@@ -2451,6 +2394,48 @@ suite "Highlight - Markdown Incremental":
         buffer[i],
       ih,
       5,
+      @[],
+      SourceLanguage.langMarkdown,
+    )
+    checkMatchesFullParse(buffer, ih, SourceLanguage.langMarkdown)
+
+  test "edit inside fenced code block with language keeps nested highlight":
+    var buffer = @["# test", "", "```nim", "import std/io", "", "proc hello() =", "```"]
+    let (seg0, ls0) = initHighlightIncremental(
+      buffer, 0, buffer.high, TokenizerState(), @[], SourceLanguage.langMarkdown
+    )
+    var ih =
+      IncrementalHighlight(segments: seg0, lineStates: LineStateCache(states: ls0))
+    checkMatchesFullParse(buffer, ih, SourceLanguage.langMarkdown)
+
+    buffer[3] = "import std/strutils"
+    updateHighlightIncremental(
+      buffer.len,
+      proc(i: int): string =
+        buffer[i],
+      ih,
+      3,
+      @[],
+      SourceLanguage.langMarkdown,
+    )
+    checkMatchesFullParse(buffer, ih, SourceLanguage.langMarkdown)
+
+  test "reparse from multi-line string inside fenced code block with backtick line":
+    var buffer = @["```nim", "let x = \"\"\"", "```", "\"\"\"", "```"]
+    let (seg0, ls0) = initHighlightIncremental(
+      buffer, 0, buffer.high, TokenizerState(), @[], SourceLanguage.langMarkdown
+    )
+    var ih =
+      IncrementalHighlight(segments: seg0, lineStates: LineStateCache(states: ls0))
+    checkMatchesFullParse(buffer, ih, SourceLanguage.langMarkdown)
+
+    buffer[2] = "````"
+    updateHighlightIncremental(
+      buffer.len,
+      proc(i: int): string =
+        buffer[i],
+      ih,
+      2,
       @[],
       SourceLanguage.langMarkdown,
     )
@@ -2686,45 +2671,25 @@ suite "Highlight - Semantic overlay":
     check h.getColorPair(0, 3) == EditorColorPairIndex.function
     check h.getColorPair(0, 5) == EditorColorPairIndex.keyword
 
-  test "Diagnostic severity in colorSegments beats overlay when hasDiagnostics":
-    # Regression: getColorPair used to short-circuit on any overlay hit, so
-    # syntaxCheckErr on a semantic-token-covered identifier stayed invisible.
-    let h = Highlight(
-      colorSegments: @[
-        ColorSegment(
-          firstRow: 0,
-          firstColumn: 0,
-          lastRow: 0,
-          lastColumn: 9,
-          color: EditorColorPairIndex.syntaxCheckErr,
-          style: rt.Style(modifiers: {rt.StyleModifier.Undercurl}),
-        )
-      ],
-      hasDiagnostics: true,
+  test "Diagnostic overlay beats semantic overlay":
+    # Regression: an earlier code path short-circuited on any semantic overlay
+    # hit, so a diagnostic on a semantic-token-covered identifier stayed
+    # invisible.
+    let h = Highlight(colorSegments: @[])
+    var diag: DiagnosticOverlayLine
+    diag.cells.add(
+      DiagnosticOverlayCell(
+        firstColumn: 0,
+        lastColumn: 9,
+        color: EditorColorPairIndex.syntaxCheckErr,
+        style: rt.Style(modifiers: {rt.StyleModifier.Undercurl}),
+      )
     )
+    h.diagnosticOverlay[0] = diag
     let outcome = applySemanticTokens(h, mkResp(@[0, 2, 3, 1, 0]), colorTab, 1)
     check outcome == saoDone
     check h.getColorPair(0, 3) == EditorColorPairIndex.syntaxCheckErr
     check h.getSegmentModifiers(0, 3) == {rt.StyleModifier.Undercurl}
-
-  test "Overlay still wins when hasDiagnostics is false":
-    # Guard: the priority check must not activate on a non-diagnostic segment
-    # that happens to share the colour path.
-    let h = Highlight(
-      colorSegments: @[
-        ColorSegment(
-          firstRow: 0,
-          firstColumn: 0,
-          lastRow: 0,
-          lastColumn: 9,
-          color: EditorColorPairIndex.syntaxCheckErr,
-          style: defaultStyle,
-        )
-      ]
-    )
-    let outcome = applySemanticTokens(h, mkResp(@[0, 2, 3, 1, 0]), colorTab, 1)
-    check outcome == saoDone
-    check h.getColorPair(0, 3) == EditorColorPairIndex.function
 
   test "getSegmentModifiers unions overlay + syntax modifiers":
     # Syntax segment has Undercurl (e.g. diagnostic); overlay carries Bold.
@@ -3907,9 +3872,6 @@ suite "Highlight - Semantic overlay edit shift":
   test "single-line shift clips token whose tail exceeds new line length":
     # Token [10..20), new line length 15 → clipped to length 5.
     let h = mkH({0: @[mkTok(10, 10)]})
-    h.semanticShiftForSingleLineEdit(0, 5, 0, 15) # colDelta=0 short-circuits
-    # colDelta=0 short-circuits; try non-zero delta forcing clip.
-    # Actually with colDelta 0 nothing changes. Use colDelta -2:
     h.semanticShiftForSingleLineEdit(0, 5, -2, 15)
     # After shift: token at firstColumn=8, length would be 10, clipped to 7.
     check h.semantic[0].tokens.len == 1
@@ -4069,3 +4031,135 @@ suite "Highlight - Semantic overlay edit shift":
     check not b.highlight.semantic.hasKey(2)
     check not b.highlight.semantic.hasKey(4)
     check b.highlight.semantic.hasKey(3) # row 4 -> row 3
+
+suite "Highlight - diagnosticOverlay read path":
+  # These construct a Highlight directly with only diagnosticOverlay populated
+  # (no baked syntaxCheck* segments) so the read-time overlay path is exercised
+  # in isolation from the bake. When Phase 3 removes the bake, existing
+  # behavioural tests keep passing only if this path is correct.
+
+  test "overlay-only single-line hit returns color and Undercurl":
+    let h = Highlight(colorSegments: @[])
+    var line: DiagnosticOverlayLine
+    line.cells.add(
+      DiagnosticOverlayCell(
+        firstColumn: 2,
+        lastColumn: 4,
+        color: EditorColorPairIndex.syntaxCheckErr,
+        style: rt.Style(modifiers: {rt.StyleModifier.Undercurl}),
+      )
+    )
+    h.diagnosticOverlay[0] = line
+
+    check h.getColorPair(0, 1) == EditorColorPairIndex.default
+    check h.getColorPair(0, 2) == EditorColorPairIndex.syntaxCheckErr
+    check h.getColorPair(0, 4) == EditorColorPairIndex.syntaxCheckErr
+    check h.getColorPair(0, 5) == EditorColorPairIndex.default
+
+    check h.getSegmentModifiers(0, 2) == {rt.StyleModifier.Undercurl}
+    check h.getSegmentModifiers(0, 5) == {}
+
+  test "overlay-only overlapping cells: last cell wins":
+    let h = Highlight(colorSegments: @[])
+    var line: DiagnosticOverlayLine
+    line.cells.add(
+      DiagnosticOverlayCell(
+        firstColumn: 0,
+        lastColumn: 4,
+        color: EditorColorPairIndex.syntaxCheckErr,
+        style: rt.Style(modifiers: {rt.StyleModifier.Undercurl}),
+      )
+    )
+    line.cells.add(
+      DiagnosticOverlayCell(
+        firstColumn: 2,
+        lastColumn: 7,
+        color: EditorColorPairIndex.syntaxCheckWarn,
+        style: rt.Style(modifiers: {rt.StyleModifier.Undercurl}),
+      )
+    )
+    h.diagnosticOverlay[0] = line
+
+    check h.getColorPair(0, 0) == EditorColorPairIndex.syntaxCheckErr
+    check h.getColorPair(0, 3) == EditorColorPairIndex.syntaxCheckWarn
+    check h.getColorPair(0, 7) == EditorColorPairIndex.syntaxCheckWarn
+
+  test "overlay beats semantic overlay":
+    let h = Highlight(colorSegments: @[])
+    var sem: SemanticOverlayLine
+    sem.tokens.add(
+      SemanticOverlayToken(
+        firstColumn: 0,
+        length: 5,
+        color: EditorColorPairIndex.function,
+        style: rt.Style(modifiers: {rt.StyleModifier.Bold}),
+      )
+    )
+    h.semantic[0] = sem
+
+    var diag: DiagnosticOverlayLine
+    diag.cells.add(
+      DiagnosticOverlayCell(
+        firstColumn: 1,
+        lastColumn: 3,
+        color: EditorColorPairIndex.syntaxCheckErr,
+        style: rt.Style(modifiers: {rt.StyleModifier.Undercurl}),
+      )
+    )
+    h.diagnosticOverlay[0] = diag
+
+    # Inside diagnostic: colour is diag, modifiers union with semantic.
+    check h.getColorPair(0, 2) == EditorColorPairIndex.syntaxCheckErr
+    check h.getSegmentModifiers(0, 2) ==
+      {rt.StyleModifier.Undercurl, rt.StyleModifier.Bold}
+    # Outside diagnostic but inside semantic: semantic wins.
+    check h.getColorPair(0, 4) == EditorColorPairIndex.function
+    check h.getSegmentModifiers(0, 4) == {rt.StyleModifier.Bold}
+
+  test "overlay with lastColumn=int.high covers row to end":
+    let h = Highlight(colorSegments: @[])
+    var line: DiagnosticOverlayLine
+    line.cells.add(
+      DiagnosticOverlayCell(
+        firstColumn: 3,
+        lastColumn: int.high,
+        color: EditorColorPairIndex.syntaxCheckErr,
+        style: rt.Style(modifiers: {rt.StyleModifier.Undercurl}),
+      )
+    )
+    h.diagnosticOverlay[1] = line
+
+    check h.getColorPair(1, 2) == EditorColorPairIndex.default
+    check h.getColorPair(1, 3) == EditorColorPairIndex.syntaxCheckErr
+    check h.getColorPair(1, 10_000) == EditorColorPairIndex.syntaxCheckErr
+
+  test "applyDiagnosticHighlights populates diagnosticOverlay":
+    # Sanity: the write path in buffer/markers.nim projects buffer.diagnostics
+    # onto the per-row overlay in addition to the bake.
+    let buf = newTextBuffer("line0\nline1\nline2\nline3")
+    buf.language = SourceLanguage.langNone
+    buf.diagnostics = @[
+      BufferDiagnostic(
+        startLine: 0,
+        startCol: 2,
+        endLine: 2,
+        endCol: 3,
+        severity: bdsError,
+        message: "multi-line",
+      )
+    ]
+    buf.diagnosticsDirty = true
+    buf.highlightNeedsUpdate = true
+    buf.updateHighlight()
+
+    check 0 in buf.highlight.diagnosticOverlay
+    check 1 in buf.highlight.diagnosticOverlay
+    check 2 in buf.highlight.diagnosticOverlay
+    check 3 notin buf.highlight.diagnosticOverlay
+
+    check buf.highlight.diagnosticOverlay[0].cells[0].firstColumn == 2
+    check buf.highlight.diagnosticOverlay[0].cells[0].lastColumn == int.high
+    check buf.highlight.diagnosticOverlay[1].cells[0].firstColumn == 0
+    check buf.highlight.diagnosticOverlay[1].cells[0].lastColumn == int.high
+    check buf.highlight.diagnosticOverlay[2].cells[0].firstColumn == 0
+    check buf.highlight.diagnosticOverlay[2].cells[0].lastColumn == 2

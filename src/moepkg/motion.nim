@@ -26,7 +26,9 @@ import std/[options, unicode, monotimes, times]
 
 import pkg/results
 
-import buffer, types, unicode_utils, logger, render_utils, config, modes
+import types, unicode_utils, logger, render_utils, config, modes
+import buffer/[core, edit, fold, undo]
+import visible_rows
 
 type
   # Motion command with count
@@ -37,7 +39,7 @@ type
 
   # Motion executor - handles only motion logic
   MotionExecutor* = ref object
-    buffer*: buffer.TextBuffer
+    buffer*: core.TextBuffer
 
   # Viewport manager - handles viewport updates
   ViewportManager* = ref object
@@ -60,7 +62,7 @@ const tagScanInitialRadius = 128
   ## window quadruples until the enclosing pair is found, so the common case
   ## touches only nearby lines instead of flattening the whole buffer.
 
-proc newMotionExecutor*(buffer: buffer.TextBuffer): MotionExecutor =
+proc newMotionExecutor*(buffer: core.TextBuffer): MotionExecutor =
   MotionExecutor(buffer: buffer)
 
 proc maxCursorColumn(lineCharLen: int, mode: EditorMode): int =
@@ -918,7 +920,7 @@ proc newCursorManager*(state: EditorState): CursorManager =
   CursorManager(state: state)
 
 proc clampPosition*(
-    mgr: CursorManager, pos: CursorPosition, buf: buffer.TextBuffer
+    mgr: CursorManager, pos: CursorPosition, buf: core.TextBuffer
 ): CursorPosition =
   ## Ensure cursor position is within valid bounds
   result = pos
@@ -957,36 +959,6 @@ proc clampPosition*(
 proc newViewportManager*(viewport: ViewPort): ViewportManager =
   ViewportManager(viewport: viewport)
 
-proc calculateScreenLine(
-    mgr: ViewportManager,
-    buffer: buffer.TextBuffer,
-    startLine: int,
-    targetLine: int,
-    lineWrap: bool,
-    maxWidth: int,
-    tabStop: int = 4,
-    maxResult: int = int.high,
-): int =
-  ## Calculate screen line position of targetLine starting from startLine.
-  ## Returns the number of screen lines from startLine to targetLine.
-  ## Stops early if result reaches maxResult to avoid O(n) for distant jumps.
-  if lineWrap and mgr.wrapCountCache != nil:
-    mgr.wrapCountCache.ensureFresh(buffer, maxWidth, tabStop)
-  result = 0
-  for lineIdx in startLine ..< targetLine:
-    if result >= maxResult:
-      return
-    if lineIdx >= 0 and lineIdx < buffer.len:
-      if lineWrap:
-        let wrapped =
-          if mgr.wrapCountCache != nil:
-            mgr.wrapCountCache.cachedWrapCount(buffer, lineIdx)
-          else:
-            calculateWrapCount(buffer.getLine(lineIdx), maxWidth, tabStop)
-        result += wrapped
-      else:
-        result += 1
-
 proc updateViewport*(
     mgr: ViewportManager,
     cursorPos: CursorPosition,
@@ -994,11 +966,13 @@ proc updateViewport*(
     showStatusLine: bool = true,
     reservedLines: int = -1, # -1 means auto-calculate from showStatusLine
     lineWrap: bool = false,
-    buffer: buffer.TextBuffer = nil,
-    lineNumOffset: int = 0,
+    buffer: core.TextBuffer = nil,
+    viewportOffset: int = 0,
     tabStop: int = 4,
 ) =
-  ## Update viewport to keep cursor visible with 1-line scrolling
+  ## Update viewport to keep cursor visible with 1-line scrolling.
+  ## `viewportOffset` is every non-text cell of the window (line number +
+  ## sidebar + scrollbar), from `viewportOffsetFor`.
 
   # Ensure we have valid data
   if lineCount <= 0:
@@ -1021,72 +995,28 @@ proc updateViewport*(
   if lineWrap and not buffer.isNil:
     # Line wrap mode: calculate screen positions
     let
-      maxWidth = max(1, mgr.viewport.width - lineNumOffset)
+      maxWidth = wrapWidthFor(mgr.viewport.width, viewportOffset)
       visibleHeight = mgr.viewport.height - actualReservedLines
 
-    # Calculate cursor's screen line position relative to topLine.
-    # Use visibleHeight as early-exit bound to avoid O(n) for distant jumps.
-    var cursorScreenLine = mgr.calculateScreenLine(
-      buffer,
-      mgr.viewport.topLine,
-      clampedCursorY,
-      lineWrap,
-      maxWidth,
-      tabStop,
-      maxResult = visibleHeight,
-    )
+      rl = initRowLayout(buffer, mgr.wrapCountCache, lineWrap, maxWidth, tabStop)
+      cursorWrapOffset = rl.cursorCell(clampedCursorY, clampedCursorX).wrapSeg
 
-    # Add offset within the cursor's wrapped line
-    if clampedCursorY >= 0 and clampedCursorY < buffer.len:
-      let
-        cursorLine = buffer.getLine(clampedCursorY)
-        (wrapLineIndex, _) =
-          cursorWrapPosition(cursorLine, clampedCursorX, maxWidth, tabStop)
-      cursorScreenLine += wrapLineIndex
+    # Cursor's screen row relative to topLine. The walk stops at visibleHeight
+    # so a distant jump costs O(visibleHeight), not O(lines).
+    let cursorScreenLine =
+      rl.rowOfLine(mgr.viewport.topLine, 0, clampedCursorY, visibleHeight) +
+      cursorWrapOffset
 
     # Scroll up if cursor is above viewport
     if cursorScreenLine < 0 or clampedCursorY < mgr.viewport.topLine:
       mgr.viewport.resetViewportTop(clampedCursorY)
     # Scroll down if cursor is below viewport
     elif cursorScreenLine >= visibleHeight:
-      # Walk backwards from the cursor line to find the topLine that makes the
-      # cursor just visible at the bottom. This is O(viewport_height) instead
-      # of the previous O(n * viewport_height) forward search.
-      let cursorWrapOffset =
-        if clampedCursorY >= 0 and clampedCursorY < buffer.len:
-          let cursorLine = buffer.getLine(clampedCursorY)
-          cursorWrapPosition(cursorLine, clampedCursorX, maxWidth, tabStop)[0]
-        else:
-          0
-
-      # Budget: screen lines available above the cursor's wrap position.
-      # Condition: sum(wrapCount[topLine..cursorY-1]) + cursorWrapOffset < visibleHeight
-      let budget = visibleHeight - cursorWrapOffset
-
-      if mgr.wrapCountCache != nil:
-        mgr.wrapCountCache.ensureFresh(buffer, maxWidth, tabStop)
-      var
-        targetTopLine = clampedCursorY
-        accum = 0
-        line = clampedCursorY - 1
-
-      while line >= 0:
-        let lineHeight =
-          if line < buffer.len:
-            if mgr.wrapCountCache != nil:
-              mgr.wrapCountCache.cachedWrapCount(buffer, line)
-            else:
-              calculateWrapCount(buffer.getLine(line), maxWidth, tabStop)
-          else:
-            1
-        if accum + lineHeight < budget:
-          accum += lineHeight
-          targetTopLine = line
-          line -= 1
-        else:
-          break
-
-      mgr.viewport.resetViewportTop(targetTopLine)
+      # Highest top that still shows the cursor on the last row. This viewport
+      # only scrolls whole lines, so a top landing mid-line moves down one.
+      mgr.viewport.resetViewportTop(
+        rl.lineTopFor(clampedCursorY, cursorWrapOffset, max(0, visibleHeight - 1))
+      )
   else:
     # No line wrap: simple logic
     if clampedCursorY < mgr.viewport.topLine:
@@ -1102,8 +1032,8 @@ proc updateViewport*(
 
   # Horizontal scrolling - keep cursor visible (disabled in wrap mode)
   if not lineWrap:
-    # Account for line number offset when calculating visible text width
-    let visibleTextWidth = max(1, mgr.viewport.width - lineNumOffset)
+    # Account for the gutters when calculating visible text width
+    let visibleTextWidth = wrapWidthFor(mgr.viewport.width, viewportOffset)
     if clampedCursorX < mgr.viewport.leftColumn:
       mgr.viewport.leftColumn = clampedCursorX
     elif clampedCursorX >= mgr.viewport.leftColumn + visibleTextWidth:
@@ -1283,7 +1213,7 @@ proc updateScrollAnimation*(
   return (true, newCursorLine)
 
 proc newMotionController*(
-    buf: buffer.TextBuffer, state: EditorState, viewport: ViewPort
+    buf: core.TextBuffer, state: EditorState, viewport: ViewPort
 ): MotionController =
   MotionController(
     executor: newMotionExecutor(buf),
@@ -1339,13 +1269,13 @@ proc executeMotion*(
   if updateViewport:
     let
       lineCount = controller.executor.buffer.len
-      lineNumOffset =
+      viewportOffset =
         viewportOffsetFor(controller.executor.buffer, controller.cursorManager.state)
 
     controller.viewportManager.updateViewport(
       newPos, lineCount, controller.cursorManager.state.showStatusLine,
       controller.cursorManager.state.windowDisplay.viewportReservedLines, lineWrap,
-      controller.executor.buffer, lineNumOffset, controller.cursorManager.state.tabStop,
+      controller.executor.buffer, viewportOffset, controller.cursorManager.state.tabStop,
     )
 
   # Disable horizontal scrolling when line wrap is enabled
@@ -1552,6 +1482,29 @@ proc extractRangeText*(buffer: TextBuffer, range: OperatorRange): string =
 
   return text
 
+proc deleteLinesInRange(buffer: TextBuffer, range: OperatorRange): Result[(), string] =
+  ## Delete every line the linewise range covers, keeping the buffer at one line.
+  var brokeEarly = false
+  for i in 0 .. (range.endPos.line - range.start.line):
+    if range.start.line < buffer.len:
+      if buffer.len == 1:
+        brokeEarly = true
+        break
+      let deleteResult = buffer.deleteLine(range.start.line)
+      if deleteResult.isErr:
+        return err(deleteResult.error)
+
+  if brokeEarly:
+    let lastLine = buffer.getLine(0)
+    if lastLine.len > 0:
+      let clearResult = buffer.deleteRange(
+        BufferPosition(line: 0, column: 0),
+        BufferPosition(line: 0, column: lastLine.charLen - 1),
+      )
+      if clearResult.isErr:
+        return err(clearResult.error)
+  ok(())
+
 proc deleteRange*(buffer: TextBuffer, range: OperatorRange): Result[(), string] =
   ## Delete text in the given range
   ## Used for delete and change operations
@@ -1564,43 +1517,17 @@ proc deleteRange*(buffer: TextBuffer, range: OperatorRange): Result[(), string] 
     # Delete entire lines
     let lineCount = range.endPos.line - range.start.line + 1
 
-    # Use transaction for multiple line deletions
     if lineCount > 1:
-      let txnResult = buffer.beginTransaction("delete " & $lineCount & " lines")
-      if txnResult.isErr:
-        return err(txnResult.error)
-
-    var brokeEarly = false
-    for i in 0 .. (range.endPos.line - range.start.line):
-      if range.start.line < buffer.len:
-        # Keep at least one line in the buffer
-        if buffer.len == 1:
-          brokeEarly = true
-          break
-        let deleteResult = buffer.deleteLine(range.start.line)
-        if deleteResult.isErr:
-          if lineCount > 1:
-            discard buffer.rollbackTransaction()
-          return err(deleteResult.error)
-
-    # If we stopped because the buffer was down to 1 line, clear its content
-    if brokeEarly:
-      let lastLine = buffer.getLine(0)
-      if lastLine.len > 0:
-        let clearResult = buffer.deleteRange(
-          BufferPosition(line: 0, column: 0),
-          BufferPosition(line: 0, column: lastLine.charLen - 1),
-        )
-        if clearResult.isErr:
-          if lineCount > 1:
-            discard buffer.rollbackTransaction()
-          return err(clearResult.error)
-
-    # Commit transaction if we started one
-    if lineCount > 1:
-      let commitResult = buffer.commitTransaction()
-      if commitResult.isErr:
-        return err(commitResult.error)
+      let txr = withTransaction(buffer, "delete " & $lineCount & " lines"):
+        let r = buffer.deleteLinesInRange(range)
+        if r.isErr:
+          return err(r.error)
+      if txr.isErr:
+        return err(txr.error)
+    else:
+      let r = buffer.deleteLinesInRange(range)
+      if r.isErr:
+        return err(r.error)
   else:
     # Delete character range using buffer.deleteRange
     let deleteResult = buffer.deleteRange(range.start, range.endPos)

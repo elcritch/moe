@@ -23,7 +23,8 @@ import std/[unittest, options, tables, strutils]
 
 from pkg/celina import nil
 
-import ../src/moepkg/[types, config, modes, registers, buffer, unicode_utils]
+import ../src/moepkg/[types, config, modes, registers, unicode_utils]
+import ../src/moepkg/buffer/core
 import ../src/moepkg/celina_render_target
 import ../src/moepkg/tab_line {.all.}
 
@@ -41,16 +42,18 @@ proc createTestState(): EditorState =
       DisplaySettings(showLineCount: true, showLinePercentage: true, showEncoding: true),
     config: newEditorConfig(),
     windowDisplay: WindowDisplayState(viewportReservedLines: 2),
-    macroState: MacroState(
-      isRecording: false,
-      register: '\0',
-      recordedKeys: @[],
-      registers: initTable[char, seq[string]](),
-      lastRegister: none(char),
-      waitingForRegister: false,
-      commandType: "",
-      pendingCount: 0,
-      playbackDepth: 0,
+    pendingInput: PendingInputState(
+      macroState: MacroState(
+        isRecording: false,
+        register: '\0',
+        recordedKeys: @[],
+        registers: initTable[char, seq[string]](),
+        lastRegister: none(char),
+        waitingForRegister: false,
+        commandType: "",
+        pendingCount: 0,
+        playbackDepth: 0,
+      )
     ),
     registers: initRegisters(),
     overlay: none(OverlayKind),

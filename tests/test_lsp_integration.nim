@@ -18,8 +18,10 @@
 #[############################################################################]#
 
 import
-  std/
-    [unittest, json, options, os, tables, times, strutils, importutils, deques, random]
+  std/[
+    unittest, json, options, os, tables, times, strutils, importutils, deques, random,
+    unicode,
+  ]
 
 import pkg/results
 
@@ -275,7 +277,22 @@ suite "LspIntegration - Progress Text":
       startTime: 0.0,
     )
     let text = getProgressText(state)
-    check text.len <= MaxProgressTextLen + 10 # Allow some margin for UTF-8
+    check text.len <= MaxProgressTextLen
+
+  test "getProgressText truncates long full-width text by display width":
+    let state = LspProgressState(
+      token: "1",
+      langId: "nim",
+      title: "とても長いタイトルで切り詰められるはず",
+      message: some(
+        "これはさらに長いメッセージで上限を確実に超える内容です"
+      ),
+      percentage: some(99),
+      cancellable: false,
+      startTime: 0.0,
+    )
+    let text = getProgressText(state)
+    check displayWidthUpTo(text, text.runeLen) <= MaxProgressTextLen
 
 suite "LspIntegration - Hover Text":
   test "getHoverText with string content":
@@ -408,6 +425,57 @@ suite "LspIntegration - Signature Help":
     check info.label == "foo(a: int, b: string)"
     check info.start >= 0
     check info.stop > info.start
+
+  test "getParameterInfo disambiguates substring-collision labels":
+    let label = "sum(count: int, c: int)"
+    let sigHelp = SignatureHelp(
+      signatures: @[
+        SignatureInformation(
+          label: label,
+          documentation: none(JsonNode),
+          parameters: some(
+            @[
+              ParameterInformation(label: "count: int", documentation: none(JsonNode)),
+              ParameterInformation(label: "c: int", documentation: none(JsonNode)),
+            ]
+          ),
+          activeParameter: none(int),
+        )
+      ],
+      activeSignature: some(0),
+      activeParameter: some(1),
+    )
+    let info = getParameterInfo(sigHelp)
+    check label[info.start ..< info.stop] == "c: int"
+    check info.start == label.rfind("c: int")
+
+  test "getParameterInfo honors labelOffsets when provided":
+    let label = "foo(a: int, b: string)"
+    let sigHelp = SignatureHelp(
+      signatures: @[
+        SignatureInformation(
+          label: label,
+          documentation: none(JsonNode),
+          parameters: some(
+            @[
+              ParameterInformation(
+                labelOffsets: some((start: 4, stop: 10)), documentation: none(JsonNode)
+              ),
+              ParameterInformation(
+                labelOffsets: some((start: 12, stop: 21)), documentation: none(JsonNode)
+              ),
+            ]
+          ),
+          activeParameter: none(int),
+        )
+      ],
+      activeSignature: some(0),
+      activeParameter: some(1),
+    )
+    let info = getParameterInfo(sigHelp)
+    check info.start == 12
+    check info.stop == 21
+    check label[info.start ..< info.stop] == "b: string"
 
 suite "LspIntegration - newLspIntegration":
   privateAccess(LspIntegration)
@@ -660,6 +728,20 @@ suite "LspIntegration - applyTextEdits":
     let result = applyTextEdits(buffer, edits)
     check result.isOk
     check buffer.getLine(0) == "hello"
+
+  test "applyTextEdits skips malformed range where end=(0,0) and start>end":
+    let buffer = newTextBuffer("hello world")
+    let edits = @[
+      TextEdit(
+        range: Range(
+          start: Position(line: 0, character: 5), `end`: Position(line: 0, character: 0)
+        ),
+        newText: "",
+      )
+    ]
+    let result = applyTextEdits(buffer, edits)
+    check result.isOk
+    check buffer.getLine(0) == "hello world"
 
   test "applyTextEdits multiple edits in reverse order":
     let buffer = newTextBuffer("abc")
@@ -1215,6 +1297,62 @@ suite "LspIntegration - Buffer Version Tracking":
     check lsp.onBufferOpen(buffer, serverIsFresh = true).isOk
     check lsp.sentDocumentVersion(tmpDir / "restart.nim") == some(1)
 
+suite "LspIntegration - Path canonicalization":
+  # Relative and absolute textual paths for the same file used to occupy
+  # two `lsp.documents` entries with independent version counters, while
+  # pathToUri collapsed both to one URI — later didChange got dropped.
+  privateAccess(LspIntegration)
+
+  var lsp: LspIntegration
+  var origCwd: string
+  setup:
+    lsp = newLspIntegration(tmpDir)
+    lsp.service.liveWorkerOverride = proc(path: string): bool =
+      true
+    origCwd = getCurrentDir()
+    setCurrentDir(tmpDir)
+  teardown:
+    setCurrentDir(origCwd)
+    lsp.shutdown()
+
+  test "same file via relative and absolute path collapses to one document":
+    let cwd = getCurrentDir()
+    let relBuf = newTextBuffer("hi", some("canonical_rel.nim"))
+    let absBuf = newTextBuffer("hi", some(cwd / "canonical_rel.nim"))
+    check lsp.onBufferOpen(relBuf).isOk
+    check lsp.onBufferOpen(absBuf).isOk
+    check lsp.documents.len == 1
+
+  test "sentDocumentVersion accepts either textual form of the same path":
+    let cwd = getCurrentDir()
+    let buffer = newTextBuffer("hi", some(cwd / "canonical_lookup.nim"))
+    check lsp.onBufferOpen(buffer).isOk
+    check lsp.sentDocumentVersion(cwd / "canonical_lookup.nim") == some(1)
+    check lsp.sentDocumentVersion("canonical_lookup.nim") == some(1)
+
+  test "version counter stays consistent across relative/absolute re-open":
+    let cwd = getCurrentDir()
+    let relBuf = newTextBuffer("hi", some("canonical_mono.nim"))
+    check lsp.onBufferOpen(relBuf).isOk
+    check relBuf.insertText(BufferPosition(line: 0, column: 0), "x").isOk
+    check lsp.onBufferChange(relBuf).isOk
+    check lsp.sentDocumentVersion(cwd / "canonical_mono.nim") == some(2)
+
+    # Re-open via absolute path hits the same entry (didClose + reset to 1).
+    let absBuf = newTextBuffer("hi", some(cwd / "canonical_mono.nim"))
+    check lsp.onBufferOpen(absBuf).isOk
+    check lsp.sentDocumentVersion("canonical_mono.nim") == some(1)
+    check lsp.documents.len == 1
+
+  test "onBufferClose via relative path clears entry opened via absolute":
+    let cwd = getCurrentDir()
+    let openBuf = newTextBuffer("hi", some(cwd / "canonical_close.nim"))
+    check lsp.onBufferOpen(openBuf).isOk
+    check lsp.documents.len == 1
+    let closeBuf = newTextBuffer("hi", some("canonical_close.nim"))
+    check lsp.onBufferClose(closeBuf).isOk
+    check lsp.documents.len == 0
+
 suite "LspIntegration - flushPendingBufferChange":
   privateAccess(LspIntegration)
 
@@ -1364,6 +1502,18 @@ suite "LspIntegration - Feature Support Checks (disabled)":
     let buffer = newTextBuffer("test", some(tmpDir / "test.nim"))
     check not lsp.hasDocumentLinkSupport(buffer)
 
+  test "hasFormattingSupport returns false when disabled":
+    let lsp = newLspIntegration()
+    lsp.setEnabled(false)
+    let buffer = newTextBuffer("test", some(tmpDir / "test.nim"))
+    check not lsp.hasFormattingSupport(buffer)
+
+  test "hasSelectionRangeSupport returns false when disabled":
+    let lsp = newLspIntegration()
+    lsp.setEnabled(false)
+    let buffer = newTextBuffer("test", some(tmpDir / "test.nim"))
+    check not lsp.hasSelectionRangeSupport(buffer)
+
   test "hasExecuteCommandSupport returns false when disabled":
     let lsp = newLspIntegration()
     lsp.setEnabled(false)
@@ -1476,6 +1626,22 @@ suite "LspIntegration - Goto/References/Hover capability gating":
     lsp.service.capabilities["nim"] =
       ServerCapabilities(implementationProvider: some(newJBool(true)))
     check lsp.hasImplementationSupport(buffer)
+
+  test "hasFormattingSupport reflects the advertised server capability":
+    let lsp = newLspIntegration()
+    let buffer = newTextBuffer("test", some(path))
+    check not lsp.hasFormattingSupport(buffer)
+    lsp.service.capabilities["nim"] =
+      ServerCapabilities(documentFormattingProvider: some(newJBool(true)))
+    check lsp.hasFormattingSupport(buffer)
+
+  test "hasSelectionRangeSupport reflects the advertised server capability":
+    let lsp = newLspIntegration()
+    let buffer = newTextBuffer("test", some(path))
+    check not lsp.hasSelectionRangeSupport(buffer)
+    lsp.service.capabilities["nim"] =
+      ServerCapabilities(selectionRangeProvider: some(newJBool(true)))
+    check lsp.hasSelectionRangeSupport(buffer)
 
   test "a literal `false` provider counts as unsupported":
     # A server may advertise `"definitionProvider": false` to disable the
@@ -2049,6 +2215,46 @@ suite "LspIntegration - Additional Request Methods (disabled)":
     let result = lsp.startSemanticTokensRequest(buffer, 0, 10)
     check result.isErr
 
+  test "startCompletionResolveRequest returns error when disabled":
+    let lsp = newLspIntegration()
+    lsp.setEnabled(false)
+    let buffer = newTextBuffer("test", some(tmpDir / "test.nim"))
+    let result = lsp.startCompletionResolveRequest(buffer, %*{"label": "x"})
+    check result.isErr
+    check "disabled" in result.error
+
+  test "startCompletionResolveRequest returns error for buffer without path":
+    let lsp = newLspIntegration()
+    let buffer = newTextBuffer("test")
+    let result = lsp.startCompletionResolveRequest(buffer, %*{"label": "x"})
+    check result.isErr
+    check "file path" in result.error
+
+  test "startDocumentLinkResolveRequest returns error when disabled":
+    let lsp = newLspIntegration()
+    lsp.setEnabled(false)
+    let buffer = newTextBuffer("test", some(tmpDir / "test.nim"))
+    let link = DocumentLink(
+      range: Range(
+        start: Position(line: 0, character: 0), `end`: Position(line: 0, character: 1)
+      )
+    )
+    let result = lsp.startDocumentLinkResolveRequest(buffer, link)
+    check result.isErr
+    check "disabled" in result.error
+
+  test "startDocumentLinkResolveRequest returns error for buffer without path":
+    let lsp = newLspIntegration()
+    let buffer = newTextBuffer("test")
+    let link = DocumentLink(
+      range: Range(
+        start: Position(line: 0, character: 0), `end`: Position(line: 0, character: 1)
+      )
+    )
+    let result = lsp.startDocumentLinkResolveRequest(buffer, link)
+    check result.isErr
+    check "file path" in result.error
+
 suite "LspIntegration - Additional Feature Support Checks":
   test "hasCodeLensResolveSupport returns false when disabled":
     let lsp = newLspIntegration()
@@ -2126,6 +2332,27 @@ suite "LspIntegration - Callbacks":
     )
     check not called
 
+  test "setServerRestartCallback sets callback":
+    let lsp = newLspIntegration()
+    var called = false
+    lsp.setServerRestartCallback(
+      proc(langId: string) {.gcsafe.} =
+        called = true
+    )
+    check not called
+    check lsp.service.onServerRestart != nil
+
+  test "setApplyEditCallback sets callback":
+    let lsp = newLspIntegration()
+    var called = false
+    lsp.setApplyEditCallback(
+      proc(edit: WorkspaceEdit): ApplyWorkspaceEditResult {.gcsafe.} =
+        called = true
+        (applied: true, failureReason: none(string))
+    )
+    check not called
+    check lsp.service.onApplyWorkspaceEdit != nil
+
 suite "LspIntegration - getSemanticTokensLegend":
   test "getSemanticTokensLegend returns none when disabled":
     let lsp = newLspIntegration()
@@ -2137,6 +2364,25 @@ suite "LspIntegration - getSemanticTokensLegend":
     let lsp = newLspIntegration()
     let buffer = newTextBuffer("test")
     check lsp.getSemanticTokensLegend(buffer).isNone
+
+suite "LspIntegration - getSemanticTypeColorTable":
+  test "getSemanticTypeColorTable returns none when disabled":
+    let lsp = newLspIntegration()
+    lsp.setEnabled(false)
+    let buffer = newTextBuffer("test", some(tmpDir / "test.nim"))
+    check lsp.getSemanticTypeColorTable(buffer).isNone
+
+  test "getSemanticTypeColorTable returns none for buffer without path":
+    let lsp = newLspIntegration()
+    let buffer = newTextBuffer("test")
+    check lsp.getSemanticTypeColorTable(buffer).isNone
+
+  test "getSemanticTypeColorTable returns none when server has no legend":
+    let lsp = newLspIntegration()
+    let buffer = newTextBuffer("test", some(tmpDir / "test.nim"))
+    # No server is running, so the legend lookup misses and no cache is built.
+    check lsp.getSemanticTypeColorTable(buffer).isNone
+    check lsp.semanticTypeColorTables.len == 0
 
 suite "LspIntegration - logLspDegraded":
   setup:
@@ -2672,3 +2918,145 @@ suite "LspIntegration - formatDiagnosticsForHover":
 
   test "empty diagnostics returns empty string":
     check formatDiagnosticsForHover(@[]) == ""
+
+suite "LspIntegration - hasStaleTargetBuffer":
+  proc snapshotOf(buffers: seq[TextBuffer]): Table[BufferId, int] =
+    for buf in buffers:
+      result[buf.id] = buf.contentVersion
+
+  proc editFor(paths: varargs[string]): WorkspaceEdit =
+    var changes = initTable[string, seq[TextEdit]]()
+    for path in paths:
+      changes[pathToUri(path)] =
+        @[TextEdit(range: newRange(0, 0, 0, 3), newText: "xxx")]
+    WorkspaceEdit(changes: some(changes), documentChanges: none(seq[TextDocumentEdit]))
+
+  test "unchanged target buffers are not stale":
+    let buffers = @[
+      newTextBuffer("aaa", some(tmpDir / "a.txt")),
+      newTextBuffer("bbb", some(tmpDir / "b.txt")),
+    ]
+    check not hasStaleTargetBuffer(
+      buffers, editFor(tmpDir / "a.txt", tmpDir / "b.txt"), snapshotOf(buffers)
+    )
+
+  test "a target buffer whose contentVersion advanced is stale":
+    let buffers = @[newTextBuffer("aaa", some(tmpDir / "a.txt"))]
+    let snapshot = snapshotOf(buffers)
+    buffers[0].contentVersion.inc
+
+    check hasStaleTargetBuffer(buffers, editFor(tmpDir / "a.txt"), snapshot)
+
+  test "a target buffer missing from the snapshot is stale":
+    # Regression: a buffer opened *while* the rename request was in flight has
+    # no snapshot entry, so nothing pins it to the text the server saw.
+    # Defaulting the lookup to the buffer's own contentVersion compared the
+    # value against itself and let it through unverified.
+    let opened = @[newTextBuffer("aaa", some(tmpDir / "a.txt"))]
+    let snapshot = snapshotOf(opened)
+
+    let buffers = opened & @[newTextBuffer("bbb", some(tmpDir / "b.txt"))]
+    check hasStaleTargetBuffer(buffers, editFor(tmpDir / "b.txt"), snapshot)
+
+  test "a buffer outside the edit's targets is ignored":
+    let opened = @[newTextBuffer("aaa", some(tmpDir / "a.txt"))]
+    let snapshot = snapshotOf(opened)
+
+    # Opened mid-request, but the edit does not touch it.
+    let buffers = opened & @[newTextBuffer("bbb", some(tmpDir / "b.txt"))]
+    check not hasStaleTargetBuffer(buffers, editFor(tmpDir / "a.txt"), snapshot)
+
+  test "two buffers on the same file are tracked by id, not path":
+    # Same file opened twice (relative and absolute). A path-keyed baseline
+    # would let one buffer's version shadow the other's.
+    let relPath = "stale_target.txt"
+    let buffers = @[
+      newTextBuffer("aaa", some(relPath)),
+      newTextBuffer("aaa", some(absolutePath(relPath))),
+    ]
+    let snapshot = snapshotOf(buffers)
+
+    check not hasStaleTargetBuffer(buffers, editFor(relPath), snapshot)
+
+    buffers[1].contentVersion.inc
+    check hasStaleTargetBuffer(buffers, editFor(relPath), snapshot)
+
+suite "LspIntegration - hasStaleServerEditTarget":
+  var lsp: LspIntegration
+  setup:
+    lsp = newLspIntegration(tmpDir)
+  teardown:
+    lsp.shutdown()
+
+  proc setLiveWorkers(lsp: LspIntegration, live: bool) =
+    lsp.service.liveWorkerOverride = proc(path: string): bool =
+      live
+
+  proc editFor(path: string): WorkspaceEdit =
+    var changes = initTable[string, seq[TextEdit]]()
+    changes[pathToUri(path)] = @[TextEdit(range: newRange(0, 0, 0, 3), newText: "xxx")]
+    WorkspaceEdit(changes: some(changes), documentChanges: none(seq[TextDocumentEdit]))
+
+  proc syncedAt(buf: TextBuffer): Table[BufferId, int] =
+    result[buf.id] = buf.contentVersion
+
+  test "server-held buffer in sync is not stale":
+    lsp.setLiveWorkers(true)
+    let buf = newTextBuffer("aaa", some(tmpDir / "a.nim"))
+
+    check not lsp.hasStaleServerEditTarget(
+      @[buf], editFor(tmpDir / "a.nim"), syncedAt(buf)
+    )
+
+  test "server-held buffer edited since the last sync is stale":
+    lsp.setLiveWorkers(true)
+    let buf = newTextBuffer("aaa", some(tmpDir / "a.nim"))
+    let synced = syncedAt(buf)
+    discard buf.insertText(BufferPosition(line: 0, column: 3), "!")
+
+    check lsp.hasStaleServerEditTarget(@[buf], editFor(tmpDir / "a.nim"), synced)
+
+  test "buffer the server never received is stale when it has unsaved changes":
+    # Regression: maybeUpdateLsp records a sync baseline even when the
+    # notification is dropped for want of a worker (e.g. Cargo.toml in a Rust
+    # project). contentVersion then matches while the buffer diverges from the
+    # disk text the server actually read, so the edit was let through and
+    # applied at the wrong coordinates.
+    lsp.setLiveWorkers(false)
+    let buf = newTextBuffer("aaa", some(tmpDir / "Cargo.toml"))
+    discard buf.insertText(BufferPosition(line: 0, column: 3), "!")
+
+    check lsp.hasStaleServerEditTarget(
+      @[buf], editFor(tmpDir / "Cargo.toml"), syncedAt(buf)
+    )
+
+  test "buffer the server never received is not stale when it matches disk":
+    lsp.setLiveWorkers(false)
+    let buf = newTextBuffer("aaa", some(tmpDir / "Cargo.toml"))
+
+    check not lsp.hasStaleServerEditTarget(
+      @[buf], editFor(tmpDir / "Cargo.toml"), syncedAt(buf)
+    )
+
+  test "live worker but no sync baseline falls back to the disk comparison":
+    # didOpen never succeeded, so the server has no copy of this document.
+    lsp.setLiveWorkers(true)
+    let buf = newTextBuffer("aaa", some(tmpDir / "a.nim"))
+    let noBaseline = initTable[BufferId, int]()
+
+    check not lsp.hasStaleServerEditTarget(
+      @[buf], editFor(tmpDir / "a.nim"), noBaseline
+    )
+
+    discard buf.insertText(BufferPosition(line: 0, column: 3), "!")
+    check lsp.hasStaleServerEditTarget(@[buf], editFor(tmpDir / "a.nim"), noBaseline)
+
+  test "a buffer outside the edit's targets is ignored":
+    lsp.setLiveWorkers(false)
+    let target = newTextBuffer("aaa", some(tmpDir / "a.nim"))
+    let other = newTextBuffer("bbb", some(tmpDir / "b.nim"))
+    discard other.insertText(BufferPosition(line: 0, column: 3), "!")
+
+    check not lsp.hasStaleServerEditTarget(
+      @[target, other], editFor(tmpDir / "a.nim"), syncedAt(target)
+    )

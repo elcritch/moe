@@ -147,6 +147,34 @@ suite "LspWorker - formatRawJsonLogLine":
     let line = formatRawJsonLogLine("", ljdReceived, """{"x":1}""")
     check line == """ <<< {"x":1}"""
 
+suite "LspWorker - extractErrorMessage":
+  test "returns message from a well-formed error object":
+    let err = %*{"code": -32603, "message": "boom"}
+    check extractErrorMessage(err) == "boom"
+
+  test "falls back when message field is absent":
+    let err = %*{"code": -32603}
+    check extractErrorMessage(err) == "Unknown error"
+
+  test "custom fallback is honored":
+    let err = %*{"code": -32603}
+    check extractErrorMessage(err, "unknown error") == "unknown error"
+
+  # Regression: non-object `error` (JNull / JString) used to hit `[]`'s
+  # `assert kind == JObject` and crash the worker with AssertionDefect.
+  test "non-object error node does not raise":
+    check extractErrorMessage(newJNull()) == "Unknown error"
+    check extractErrorMessage(newJString("oops")) == "Unknown error"
+    check extractErrorMessage(newJInt(42)) == "Unknown error"
+    check extractErrorMessage(newJArray()) == "Unknown error"
+
+  test "nil node does not raise":
+    check extractErrorMessage(nil) == "Unknown error"
+
+  test "non-string message field falls back":
+    let err = %*{"message": 123}
+    check extractErrorMessage(err) == "Unknown error"
+
 suite "LspWorker - dropPendingDidOpen":
   # Regression: a didClose that arrives before the server reaches lwsRunning
   # must remove the queued didOpen for the same URI. Otherwise the post-init
@@ -362,6 +390,70 @@ suite "LspWorker - buildApplyEditResponse":
     let resp = buildApplyEditResponse("{not json", true, "")
     check resp["id"].kind == JNull
     check resp["result"]["applied"].getBool
+
+suite "LspWorker - buildWorkspaceConfigurationResponse":
+  test "returns one null per item when settings is null":
+    let params = %*{"items": [{"section": "foo"}, {"section": "bar"}]}
+    let result = buildWorkspaceConfigurationResponse(params, newJNull())
+    check result.kind == JArray
+    check result.len == 2
+    check result[0].kind == JNull
+    check result[1].kind == JNull
+
+  test "returns empty array when items is empty":
+    let params = %*{"items": []}
+    let result = buildWorkspaceConfigurationResponse(params, newJNull())
+    check result.kind == JArray
+    check result.len == 0
+
+  test "returns empty array when items is missing":
+    let params = %*{}
+    let result = buildWorkspaceConfigurationResponse(params, newJNull())
+    check result.kind == JArray
+    check result.len == 0
+
+  test "returns empty array when items is not an array":
+    let params = %*{"items": "not-an-array"}
+    let result = buildWorkspaceConfigurationResponse(params, newJNull())
+    check result.kind == JArray
+    check result.len == 0
+
+  test "returns empty array when params is null":
+    let result = buildWorkspaceConfigurationResponse(newJNull(), newJNull())
+    check result.kind == JArray
+    check result.len == 0
+
+  test "returns settings for item without section":
+    let settings = %*{"foo": "bar"}
+    let params = %*{"items": [{}]}
+    let result = buildWorkspaceConfigurationResponse(params, settings)
+    check result.kind == JArray
+    check result.len == 1
+    check result[0] == settings
+
+  test "returns section lookup for item with section":
+    let settings = %*{"rust": {"analyzer": {"enable": true}}}
+    let params = %*{"items": [{"section": "rust.analyzer"}]}
+    let result = buildWorkspaceConfigurationResponse(params, settings)
+    check result.kind == JArray
+    check result.len == 1
+    check result[0] == %*{"enable": true}
+
+  test "returns null for missing section":
+    let settings = %*{"foo": "bar"}
+    let params = %*{"items": [{"section": "baz"}]}
+    let result = buildWorkspaceConfigurationResponse(params, settings)
+    check result.kind == JArray
+    check result.len == 1
+    check result[0].kind == JNull
+
+  test "returns full settings for empty section":
+    let settings = %*{"foo": "bar"}
+    let params = %*{"items": [{"section": ""}]}
+    let result = buildWorkspaceConfigurationResponse(params, settings)
+    check result.kind == JArray
+    check result.len == 1
+    check result[0] == settings
 
 suite "LspWorker - LspEvent object":
   test "LspEvent levInitialized variant":

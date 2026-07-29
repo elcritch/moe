@@ -21,7 +21,8 @@
 
 import std/[unittest, options]
 
-import ../src/moepkg/[bookmark_manager, buffer, key_bindings]
+import ../src/moepkg/[bookmark_manager, key_bindings]
+import ../src/moepkg/buffer/core
 import ../src/moepkg/command_handlers/bookmark_manager_handler
 
 proc createTestBookmarkManagerState(): BookmarkManagerState =
@@ -370,7 +371,7 @@ suite "bookmark_manager_handler: Unhandled Keys":
   test "Unhandled special key returns bkmrUnhandled":
     let bmState = createTestBookmarkManagerState()
 
-    let keyCombo = KeyCombo(isSpecial: true, special: skPageUp, fnNum: 0, modifiers: {})
+    let keyCombo = KeyCombo(isSpecial: true, special: skDelete, fnNum: 0, modifiers: {})
     let result = handleBookmarkManagerModeKey(bmState, 24, keyCombo)
 
     check result.kind == bkmrUnhandled

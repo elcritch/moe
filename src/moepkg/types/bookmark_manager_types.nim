@@ -23,11 +23,10 @@
 ## (notably `types` and its importers) do not transitively pull in `picker/nav`
 ## via the full `bookmark_manager` module.
 
-import ../buffer
-import ../primitives
+import ../buffer/core
 import list_viewer_types
 export list_viewer_types
-export buffer.BufferId
+export core.BufferId
 
 type
   BookmarkEntry* = object ## Represents a bookmark entry in the bookmark manager list
@@ -38,9 +37,4 @@ type
 
   BookmarkManagerState* = ref object of ListViewer[BookmarkEntry]
     ## State for the bookmark manager UI.
-    ## items (bookmark entries)/selectedIndex/topLine/waitingForG are inherited.
-    # Cursor/viewport of the underlying buffer captured on entry, so quitting
-    # the manager restores the position instead of leaving it at (0, 0).
-    originCursor*: BufferPosition
-    originTopLine*: int
-    originLeftColumn*: int
+    ## items (bookmark entries)/selectedIndex/waitingForG are inherited.

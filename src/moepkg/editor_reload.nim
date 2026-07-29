@@ -31,7 +31,7 @@ import
   editor_lsp,
   editor_codelens,
   editorconfig_helper,
-  git_diff,
+  git_cache,
   git_conflict,
   motion,
   logger,
@@ -44,7 +44,7 @@ proc clampCursorAfterReload(e: Editor, buf: TextBuffer) =
   ## line. Re-clamp to valid bounds here so rendering, completion and
   ## word-at-cursor reads don't observe a stale out-of-range position in the
   ## window before the next motion would have re-clamped it.
-  let clamped = e.executer.motionController.cursorManager.clampPosition(
+  let clamped = e.motionController.cursorManager.clampPosition(
     CursorPosition(x: e.cursor.column, y: e.cursor.line), buf
   )
   e.cursor = BufferPosition(line: clamped.y, column: clamped.x)
@@ -59,7 +59,7 @@ proc finishReload(e: Editor, buf: TextBuffer, filePath: string) =
   applyEditorConfigToBuffer(buf, e.config)
   e.clampCursorAfterReload(buf)
   e.state.statusMessage = "File reloaded: " & filePath
-  e.refreshGitDiff(useBuffer = false)
+  e.refreshGitDiff()
   buf.refreshConflicts()
   e.state.timing.lastConflictScan = getMonoTime()
   e.state.timing.lastConflictScanSeq = buf.changeSeq
@@ -132,7 +132,7 @@ proc refreshBufferGitAndConflicts*(e: Editor, buf: TextBuffer) =
   ## on-disk content was replaced out-of-band (e.g. a backup restore). Operates
   ## on an arbitrary, possibly non-active buffer, so it deliberately leaves the
   ## active-buffer conflict-scan throttle (`lastConflictScan*`) untouched.
-  discard updateBufferWithGitDiff(buf, useBuffer = false)
+  e.state.git.requestGitRefresh(buf)
   buf.refreshConflicts()
 
 proc maybeUpdateConflicts*(e: Editor) =

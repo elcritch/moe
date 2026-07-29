@@ -22,7 +22,8 @@ import std/[unittest, os, options, strutils]
 import pkg/chronos
 
 import ../src/moepkg/quick_run_utils {.all.}
-import ../src/moepkg/[config, buffer, background_process]
+import ../src/moepkg/[config, background_process]
+import ../src/moepkg/buffer/core
 import ../src/moepkg/syntax/tokenizer
 
 suite "QuickRunUtils - quickRunStartupMessage":
@@ -646,7 +647,7 @@ suite "QuickRunUtils - QuickRunProcess isRunning and isFinish":
         let qp = QuickRunProcess(
           command: cmd, filePath: "test.nim", isTempFile: false, process: r.get
         )
-        discard await qp.process.waitForAsync()
+        discard await qp.process.waitForAsync(30.seconds)
         let running = qp.isRunning
         let finish = qp.isFinish
         return (running, finish)
@@ -671,7 +672,7 @@ suite "QuickRunUtils - startBackgroundQuickRun":
       let r = await startBackgroundQuickRun(prepared)
       if r.isOk:
         let qp = r.get
-        let output = await qp.waitForResultAsync()
+        let output = await qp.waitForResultAsync(30.seconds)
         if output.isOk:
           return (true, output.get)
         else:
@@ -753,7 +754,7 @@ suite "QuickRunUtils - waitForResultAsync":
         let qp = QuickRunProcess(
           command: cmd, filePath: "test.nim", isTempFile: false, process: r.get
         )
-        let output = await qp.waitForResultAsync()
+        let output = await qp.waitForResultAsync(30.seconds)
         if output.isOk:
           return (true, output.get)
         else:
@@ -779,7 +780,7 @@ suite "QuickRunUtils - waitForResultAsync":
         let qp = QuickRunProcess(
           command: cmd, filePath: "test.sh", isTempFile: false, process: r.get
         )
-        let output = await qp.waitForResultAsync()
+        let output = await qp.waitForResultAsync(30.seconds)
         if output.isOk:
           return output.get
         else:
@@ -808,7 +809,7 @@ suite "QuickRunUtils - cleanupTempFiles":
         let qp = QuickRunProcess(
           command: cmd, filePath: tempPath, isTempFile: true, process: r.get
         )
-        discard await qp.waitForResultAsync()
+        discard await qp.waitForResultAsync(30.seconds)
 
     waitFor runTest()
 
@@ -831,7 +832,7 @@ suite "QuickRunUtils - cleanupTempFiles":
         let qp = QuickRunProcess(
           command: cmd, filePath: tempPath, isTempFile: false, process: r.get
         )
-        discard await qp.waitForResultAsync()
+        discard await qp.waitForResultAsync(30.seconds)
 
     waitFor runTest()
 
@@ -859,7 +860,7 @@ suite "QuickRunUtils - cleanupTempFiles":
         let qp = QuickRunProcess(
           command: cmd, filePath: tempPath, isTempFile: true, process: r.get
         )
-        discard await qp.waitForResultAsync()
+        discard await qp.waitForResultAsync(30.seconds)
 
     waitFor runTest()
 
@@ -888,7 +889,7 @@ suite "QuickRunUtils - cleanupTempFiles":
         let qp = QuickRunProcess(
           command: cmd, filePath: tempPath, isTempFile: true, process: r.get
         )
-        discard await qp.waitForResultAsync()
+        discard await qp.waitForResultAsync(30.seconds)
 
     waitFor runTest()
 
