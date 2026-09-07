@@ -27,7 +27,8 @@
 ##
 ## Diffs are refreshed when `changeSeq` moves, when `requestGitRefresh` marks
 ## the entry stale, or on a TTL in periodic mode. Embedding hosts may disable
-## TTLs and notify repository changes themselves. Previous counts stay on
+## successful-query TTLs and notify repository changes themselves. Failures
+## retry after a delay in either mode. Previous counts stay on
 ## screen until a current (not superseded) pipeline completes.
 
 import std/[options, tables, monotimes, times, os, osproc, streams, strutils]
@@ -60,6 +61,25 @@ proc repositoryForFile(path: string): string =
       break
     directory = parent
 
+proc pathIsSameOrDescendant(path, root: string): bool =
+  if path == root:
+    return true
+  if root.len == 0:
+    return false
+  let rootWithSeparator =
+    if root.endsWith($DirSep):
+      root
+    else:
+      root & DirSep
+  path.startsWith(rootWithSeparator)
+
+proc repositoryAffectedBy(root, repositoryPath: string): bool =
+  ## A notification can announce a repository nested in the cached worktree.
+  ## In that case the old repository key must be invalidated before entries
+  ## rediscover their repository path.
+  root.len == 0 or
+    (repositoryPath.len > 0 and pathIsSameOrDescendant(root, repositoryPath))
+
 proc bufferKey(b: TextBuffer): BufferId =
   ## Stable per-buffer key: BufferId survives buffer moves/GC, unlike a raw
   ## pointer (which could be reused after collection).
@@ -76,7 +96,13 @@ proc setGitDiffRefreshInterval*(gc: var GitCacheState, ms: int64) =
   if ms > 0:
     gc.diffRefreshIntervalMs = ms
 
-proc reapPendingDiff(entry: var GitDiffCacheEntry): bool =
+proc deferDiffRetry(entry: var GitDiffCacheEntry, retryIntervalMs: int64) =
+  entry.lastRefresh = getMonoTime()
+  entry.populated = true
+  entry.retryAfter =
+    some(entry.lastRefresh + initDuration(milliseconds = retryIntervalMs))
+
+proc reapPendingDiff(entry: var GitDiffCacheEntry, retryIntervalMs: int64): bool =
   ## Advance a pending pipeline; on completion release its child, tempfiles and
   ## fds. On error/timeout keep the last known counts.
   if entry.pending.isNone:
@@ -101,9 +127,21 @@ proc reapPendingDiff(entry: var GitDiffCacheEntry): bool =
     let diffInfo = completion.get.get
     entry.counts = countGitChangedLines(diffInfo)
     entry.pendingDiffInfo = some(diffInfo)
+    entry.retryAfter = none(MonoTime)
+    entry.lastRefresh = getMonoTime()
+    entry.populated = true
+  else:
+    entry.pendingDiffInfo = none(GitDiffInfo)
+    # Back off failures in both refresh modes so an unchanged buffer can
+    # recover from a transient timeout or later pipeline-stage failure.
+    entry.deferDiffRetry(retryIntervalMs)
+  result = true
+
+proc deferBranchRetry(entry: var GitRepositoryCacheEntry) =
   entry.lastRefresh = getMonoTime()
   entry.populated = true
-  result = true
+  entry.retryAfter =
+    some(entry.lastRefresh + initDuration(milliseconds = GitBranchTtlMs))
 
 proc reapBranch(entry: var GitRepositoryCacheEntry): bool =
   if entry.pending.isNil:
@@ -114,31 +152,29 @@ proc reapBranch(entry: var GitRepositoryCacheEntry): bool =
       if (getMonoTime() - entry.started).inSeconds < 5:
         return
       releaseGitProcess(entry.pending)
-      entry.lastRefresh = getMonoTime()
-      entry.populated = true
+      entry.deferBranchRetry()
       return
     let output = entry.pending.outputStream().readAll()
     releaseGitProcess(entry.pending)
     if entry.pendingGeneration != entry.generation:
       return
-    entry.name =
-      if exitCode == 0:
-        output.strip()
-      else:
-        ""
+    if exitCode != 0:
+      entry.deferBranchRetry()
+      return
+    entry.name = output.strip()
+    entry.retryAfter = none(MonoTime)
     entry.lastRefresh = getMonoTime()
     entry.populated = true
     result = true
   except CatchableError:
     releaseGitProcess(entry.pending)
-    entry.lastRefresh = getMonoTime()
-    entry.populated = true
+    entry.deferBranchRetry()
 
 proc reapGitPipelines*(gc: var GitCacheState) =
   ## Reap every buffer's pipeline, not just the visible ones — a buffer hidden
   ## mid-flight would otherwise leak its child, tempfiles and pipe fds.
   for entry in gc.diffEntries.mvalues:
-    if reapPendingDiff(entry):
+    if reapPendingDiff(entry, gc.refreshIntervalMs()):
       inc gc.revision
   for entry in gc.repositories.mvalues:
     if reapBranch(entry):
@@ -155,11 +191,13 @@ proc scheduleGitRefresh*(gc: var GitCacheState, b: TextBuffer) =
     return
 
   let now = getMonoTime()
+  let intervalMs = gc.refreshIntervalMs()
   let needsRefresh =
     entry.forced or not entry.populated or entry.changeSeqAtRefresh != b.changeSeq or
-    entry.pathAtRefresh != b.filePath.get or (
+    entry.pathAtRefresh != b.filePath.get or
+    (entry.retryAfter.isSome and now >= entry.retryAfter.get) or (
       gc.refreshMode == grmPeriodic and
-      (now - entry.lastRefresh).inMilliseconds >= gc.refreshIntervalMs
+      (now - entry.lastRefresh).inMilliseconds >= intervalMs
     )
 
   if not needsRefresh:
@@ -174,11 +212,11 @@ proc scheduleGitRefresh*(gc: var GitCacheState, b: TextBuffer) =
   let startResult = startGitDiffFromBufferAsync(b)
   if startResult.isOk:
     entry.pending = some(startResult.get)
+    entry.retryAfter = none(MonoTime)
   else:
     entry.gitTracked = false
-    # Count the failed start as an attempt so we don't retry every tick.
-    entry.lastRefresh = now
-    entry.populated = true
+    # Back off failed starts even when successful-query TTLs are disabled.
+    entry.deferDiffRetry(intervalMs)
 
   gc.diffEntries[key] = entry
 
@@ -209,11 +247,11 @@ proc notifyGitRepositoryChanged*(gc: var GitCacheState, rootPath: string) =
     else:
       ""
   for path, entry in gc.repositories.mpairs:
-    if root.len == 0 or path == root:
+    if root.repositoryAffectedBy(path):
       inc entry.generation
       entry.forced = true
   for entry in gc.diffEntries.mvalues:
-    if root.len == 0 or entry.repositoryPath == root or (
+    if root.repositoryAffectedBy(entry.repositoryPath) or (
       entry.repositoryPath.len == 0 and not entry.sourceBuffer.isNil and
       repositoryForFile(entry.sourceBuffer.filePath.get("")) == root
     ):
@@ -221,7 +259,7 @@ proc notifyGitRepositoryChanged*(gc: var GitCacheState, rootPath: string) =
       entry.pendingDiffInfo = none(GitDiffInfo)
   # Re-discover previously non-repository files after git init, or a moved root.
   for entry in gc.branchEntries.mvalues:
-    if root.len == 0 or entry.repositoryPath == root or entry.repositoryPath.len == 0:
+    if root.repositoryAffectedBy(entry.repositoryPath) or entry.repositoryPath.len == 0:
       entry.populated = false
 
 proc refreshGitBranch*(gc: var GitCacheState, b: TextBuffer) =
@@ -248,7 +286,8 @@ proc refreshGitBranch*(gc: var GitCacheState, b: TextBuffer) =
     return
   var repository = gc.repositories.getOrDefault(entry.repositoryPath)
   let expired =
-    repository.forced or not repository.populated or (
+    repository.forced or not repository.populated or
+    (repository.retryAfter.isSome and now >= repository.retryAfter.get) or (
       gc.refreshMode == grmPeriodic and
       (now - repository.lastRefresh).inMilliseconds >= GitBranchTtlMs
     )
@@ -266,8 +305,7 @@ proc refreshGitBranch*(gc: var GitCacheState, b: TextBuffer) =
         options = {poUsePath, poStdErrToStdOut},
       )
     except CatchableError:
-      repository.lastRefresh = now
-      repository.populated = true
+      repository.deferBranchRetry()
     gc.repositories[entry.repositoryPath] = repository
 
 proc gitDiffCounts*(
@@ -280,7 +318,7 @@ proc gitBranchName*(gc: GitCacheState, b: TextBuffer): string =
   if entry.repositoryPath in gc.repositories:
     gc.repositories[entry.repositoryPath].name
   else:
-    entry.name
+    ""
 
 proc isBufferGitTracked*(gc: GitCacheState, b: TextBuffer): bool =
   ## Whether `b`'s file is present in HEAD, per the most recent scheduling
@@ -312,6 +350,9 @@ proc evictGitCacheForBuffer*(gc: var GitCacheState, b: TextBuffer) =
   for root in gc.repositories.keys:
     var used = false
     for entry in gc.branchEntries.values:
+      if entry.repositoryPath == root:
+        used = true
+    for entry in gc.diffEntries.values:
       if entry.repositoryPath == root:
         used = true
     if not used:

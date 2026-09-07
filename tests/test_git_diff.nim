@@ -345,6 +345,20 @@ suite "GitDiff - tryCanonicalPath":
     createSymlink(dir / "target.txt", dir / "link.txt")
     check tryCanonicalPath(dir / "link.txt") == expandFilename(dir / "target.txt")
 
+  test "Canonical parent preserves the final symlink":
+    let dir = getTempDir() / "moe_git_canon_test"
+    createDir(dir)
+    defer:
+      removeDir(dir)
+    let target = getTempDir() / "moe_git_canon_outside.txt"
+    writeFile(target, "x")
+    defer:
+      removeFile(target)
+    let link = dir / "link.txt"
+    createSymlink(target, link)
+
+    check tryCanonicalParentPath(link) == expandFilename(dir) / "link.txt"
+
   test "Non-existent file falls back to canonical parent":
     let dir = getTempDir() / "moe_git_canon_test"
     createDir(dir)
@@ -1120,11 +1134,18 @@ suite "GitDiff - Integration tests with git repository":
     discard execCmdEx("git add link.txt", workingDir = testDir)
     discard execCmdEx("git commit -m 'Add symlink'", workingDir = testDir)
 
+    let repoLink = getTempDir() / "moe_git_diff_outside_repo_link"
+    if symlinkExists(repoLink) or fileExists(repoLink):
+      removeFile(repoLink)
+    createSymlink(testDir, repoLink)
+    defer:
+      removeFile(repoLink)
+
     let diffProc = GitDiffProcess(
       stage: gdsGitRoot,
       startTime: epochTime(),
-      filePath: linkFile,
-      workingDir: testDir,
+      filePath: repoLink / "link.txt",
+      workingDir: repoLink,
       bufferContent: readFile(linkFile),
     )
 
@@ -1159,11 +1180,18 @@ suite "GitDiff - Integration tests with git repository":
       removeFile(linkFile)
       removeFile(outsideFile)
 
+    let repoLink = getTempDir() / "moe_git_diff_untracked_repo_link"
+    if symlinkExists(repoLink) or fileExists(repoLink):
+      removeFile(repoLink)
+    createSymlink(testDir, repoLink)
+    defer:
+      removeFile(repoLink)
+
     let diffProc = GitDiffProcess(
       stage: gdsGitRoot,
       startTime: epochTime(),
-      filePath: linkFile,
-      workingDir: testDir,
+      filePath: repoLink / "untracked_link.txt",
+      workingDir: repoLink,
       bufferContent: readFile(linkFile),
     )
 
