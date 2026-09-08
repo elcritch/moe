@@ -230,7 +230,7 @@ proc loadFileWithContent*(
     else:
       detectLanguage(path)
 
-  if b.language != SourceLanguage.langNone:
+  if b.usesSyntaxHighlighting:
     if b.len > 0:
       const InitialChunkSize = 1000
       let chunkEnd = min(InitialChunkSize - 1, b.len - 1)
@@ -263,16 +263,17 @@ proc loadFileWithContent*(
   else:
     if b.len > 0:
       b.highlight = Highlight(
-        colorSegments: @[
-          ColorSegment(
-            firstRow: 0,
-            firstColumn: 0,
-            lastRow: b.len - 1,
-            lastColumn: max(0, b.getLine(b.len - 1).len - 1),
-            color: EditorColorPairIndex.default,
-            style: highlight.defaultStyle,
-          )
-        ]
+        colorSegments:
+          @[
+            ColorSegment(
+              firstRow: 0,
+              firstColumn: 0,
+              lastRow: b.len - 1,
+              lastColumn: max(0, b.getLine(b.len - 1).len - 1),
+              color: EditorColorPairIndex.default,
+              style: highlight.defaultStyle,
+            )
+          ]
       )
     else:
       b.highlight = Highlight(colorSegments: @[])
@@ -400,7 +401,16 @@ proc saveFile*(
     logDebug("buffer", "File written successfully: " & path)
 
     buffer.markSaved()
+    let pathChanged = buffer.filePath != some(path)
     buffer.filePath = some(path)
+    if pathChanged:
+      buffer.language =
+        if buffer.allowsTextTransforms:
+          detectLanguage(path)
+        else:
+          SourceLanguage.langNone
+      buffer.incrementalHighlight = nil
+      buffer.highlightNeedsUpdate = true
 
     # Update file modification time after saving
     try:

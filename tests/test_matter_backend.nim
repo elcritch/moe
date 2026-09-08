@@ -46,6 +46,69 @@ when defined(moe.matter) or defined(features.moe.matter):
       check not grammars.matterSupports(langDiff)
       check not grammars.matterSupports(langLog)
 
+    test "TextMate file types select languages outside Moe's enum":
+      let grammars = newTestMatterGrammarSet()
+      check grammars.matterSupports(langNone, "main.tf")
+      check grammars.matterSupports(langNone, "main.tfvars")
+      check grammars.matterSupports(langNone, "main.hcl")
+      check not grammars.matterSupports(langNone, "main.nothcl")
+
+      let parsed = tokenizeMatterLine(
+        "enabled = true",
+        langNone,
+        timeLimitMs = 0,
+        grammars = grammars,
+        filename = "main.hcl",
+      )
+      check not parsed.nextState.failed
+      check parsed.spans.anyIt(it.category == mccBoolean)
+
+    test "a dynamic grammar can be added without a SourceLanguage member":
+      let grammars = newMatterGrammarSet().withMatterGrammar(
+          MatterGrammarSource(
+            content: TerraformMatterGrammar,
+            path: "terraform.tmLanguage.json",
+            fileTypes: @["hcl"],
+          )
+        )
+      check grammars.matterSupports(langNone, "module.hcl")
+
+    test "caller file type aliases survive derived grammar sets":
+      let
+        source = MatterGrammarSource(
+          content: TerraformMatterGrammar,
+          path: "terraform.tmLanguage.json",
+          fileTypes: @["hcl"],
+        )
+        withoutAlias = newMatterGrammarSet(
+          [
+            MatterGrammarSource(
+              content: TerraformMatterGrammar, path: "terraform.tmLanguage.json"
+            )
+          ]
+        )
+        original = newMatterGrammarSet([source])
+        derived =
+          original.withMatterGrammar(langNim, NimMatterGrammar, "nim.tmLanguage.json")
+      check original != withoutAlias
+      check derived.matterSupports(langNone, "module.hcl")
+
+    test "a dynamic registration overrides an existing file type association":
+      let grammars = newTestMatterGrammarSet().withMatterGrammar(
+          MatterGrammarSource(
+            content: AlternateHclMatterGrammar, path: "alternate-hcl.tmLanguage.json"
+          )
+        )
+      let parsed = tokenizeMatterLine(
+        "enabled = true",
+        langNone,
+        timeLimitMs = 0,
+        grammars = grammars,
+        filename = "module.hcl",
+      )
+      check parsed.spans.anyIt(it.category == mccKeyword)
+      check not parsed.spans.anyIt(it.category == mccBoolean)
+
     test "multiline resume uses completed structurally equal states":
       let lines = ["#[ outer", "  #[ nested ]#", "still comment", "]#", "let x = true"]
       let grammars = newTestMatterGrammarSet()

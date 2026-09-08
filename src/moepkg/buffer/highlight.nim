@@ -23,7 +23,7 @@
 ## - Incremental re-highlight on edit
 ## - Reserved-word configuration (TODO/NOTE/FIXME etc.)
 
-import std/tables
+import std/[options, tables]
 
 import ../[highlight, uri_utils]
 import ../types/highlight_types
@@ -38,16 +38,28 @@ proc effectiveHighlightBackend*(b: TextBuffer): HighlightBackend =
   ## Return the engine selected for this buffer's language and build. Matter
   ## requests fall back to builtin when unavailable or for Diff/Log. This
   ## query does not report per-line tokenizer failures or change buffer state.
+  if not b.allowsTextTransforms:
+    return hbBuiltin
   when defined(moe.matter) or defined(features.moe.matter):
-    effectiveHighlightBackend(b.highlightBackend, b.language, b.matterGrammarSet)
+    effectiveHighlightBackend(
+      b.highlightBackend, b.language, b.matterGrammarSet, b.filePath.get("")
+    )
   else:
     effectiveHighlightBackend(b.highlightBackend, b.language)
 
 proc newBufferTokenizerState*(b: TextBuffer): TokenizerState =
   when defined(moe.matter) or defined(features.moe.matter):
-    newTokenizerState(b.highlightBackend, b.language, b.matterGrammarSet)
+    newTokenizerState(
+      b.highlightBackend, b.language, b.matterGrammarSet, b.filePath.get("")
+    )
   else:
     newTokenizerState(b.highlightBackend, b.language)
+
+proc usesSyntaxHighlighting*(b: TextBuffer): bool =
+  ## Whether this text buffer has either a built-in language or a dynamically
+  ## selected Matter grammar. Raw buffers always remain unhighlighted.
+  b.allowsTextTransforms and
+    (b.language != SourceLanguage.langNone or b.effectiveHighlightBackend == hbMatter)
 
 proc matches*(pr: PendingReparse, b: TextBuffer): bool =
   ## TextBuffer-scoped overload of `PendingReparse.matches`.
@@ -96,6 +108,15 @@ proc setMatterGrammar*(
       TextMateGrammarError, "Matter support is not enabled at compile time"
     )
 
+when defined(moe.matter) or defined(features.moe.matter):
+  proc setMatterGrammar*(b: TextBuffer, source: MatterGrammarSource) =
+    ## Add a dynamically selected grammar and request Matter highlighting.
+    ## The source's TextMate metadata and optional `fileTypes` aliases determine
+    ## which file names use it.
+    let grammars = b.matterGrammarSet.withMatterGrammar(source)
+    b.setMatterGrammarSet(grammars)
+    b.setHighlightBackend(hbMatter)
+
 proc rewindUriScan(b: TextBuffer, to: int) =
   ## Move the URI-scan frontier back to `to` (clamped to -1); no-op if it is
   ## already at or below `to`.
@@ -110,7 +131,7 @@ proc isCodeBlockLine*(b: TextBuffer, line: int): bool =
   ## the state exiting it has `markdown.inCodeBlock` set. The exiting state
   ## covers the opening fence; the entering state covers the closing fence
   ## and every interior line.
-  if b.language != SourceLanguage.langMarkdown or b.incrementalHighlight == nil:
+  if b.incrementalHighlight == nil:
     return false
   let states = b.incrementalHighlight.lineStates.states
   if line < 0 or line >= states.len:
@@ -119,6 +140,8 @@ proc isCodeBlockLine*(b: TextBuffer, line: int): bool =
     if states[line].backend == hbMatter:
       let enterInBlock = line >= 1 and isMatterCodeBlock(states[line - 1].matterState)
       return enterInBlock or isMatterCodeBlock(states[line].matterState)
+  if b.language != SourceLanguage.langMarkdown:
+    return false
   let enterInBlock = line >= 1 and states[line - 1].lang.markdown.inCodeBlock
   let exitInBlock = states[line].lang.markdown.inCodeBlock
   enterInBlock or exitInBlock
@@ -369,7 +392,7 @@ proc updateHighlight*(b: TextBuffer, reparseBudget: int, parsedLines: var int): 
     # rewind below needs its start.
     var prevPr: PendingReparse
 
-    if b.language != SourceLanguage.langNone:
+    if b.usesSyntaxHighlighting:
       # An empty state cache is a valid transient flight state (a top
       # line-count change trims it), so gate on the live flight too, or the
       # next edit would fall back to a one-call full rebuild.
@@ -447,16 +470,17 @@ proc updateHighlight*(b: TextBuffer, reparseBudget: int, parsedLines: var int): 
     else:
       # Plain text - single default segment covering all lines
       if b.len > 0:
-        b.highlight.colorSegments = @[
-          ColorSegment(
-            firstRow: 0,
-            firstColumn: 0,
-            lastRow: b.len - 1,
-            lastColumn: max(0, b.getLine(b.len - 1).len - 1),
-            color: EditorColorPairIndex.default,
-            style: defaultStyle,
-          )
-        ]
+        b.highlight.colorSegments =
+          @[
+            ColorSegment(
+              firstRow: 0,
+              firstColumn: 0,
+              lastRow: b.len - 1,
+              lastColumn: max(0, b.getLine(b.len - 1).len - 1),
+              color: EditorColorPairIndex.default,
+              style: defaultStyle,
+            )
+          ]
       else:
         b.highlight.colorSegments = @[]
 

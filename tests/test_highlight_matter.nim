@@ -1,4 +1,4 @@
-import std/[sequtils, unittest]
+import std/[os, sequtils, tempfiles, unittest]
 
 import pkg/results
 
@@ -43,6 +43,64 @@ when defined(moe.matter) or defined(features.moe.matter):
       let grammars = newTestMatterGrammarSet()
       check newTokenizerState(hbMatter, langDiff, grammars).backend == hbBuiltin
       check newTokenizerState(hbMatter, langLog, grammars).backend == hbBuiltin
+
+    test "a dynamic file type highlights while the built-in language stays none":
+      let grammars = newTestMatterGrammarSet()
+      var buffer = newTextBuffer()
+      buffer.setMatterGrammarSet(grammars)
+      buffer.setHighlightBackend(hbMatter)
+      check buffer.loadFileWithContent("main.hcl", "name = \"kosmo\"\nenabled = true\n").isOk
+      check buffer.language == langNone
+      check buffer.effectiveHighlightBackend == hbMatter
+      check buffer.incrementalHighlight.backend == hbMatter
+      check buffer.highlight.colorSegments.anyIt(
+        it.color == EditorColorPairIndex.stringLit
+      )
+      check buffer.highlight.colorSegments.anyIt(
+        it.color == EditorColorPairIndex.boolean
+      )
+
+    test "Save As reselects a dynamic Matter grammar":
+      let
+        root = createTempDir("moe-matter-save-as-", "")
+        path = root / "main.hcl"
+      defer:
+        if fileExists(path):
+          removeFile(path)
+        removeDir(root)
+
+      var buffer = newTextBuffer("enabled = true")
+      buffer.setMatterGrammarSet(newTestMatterGrammarSet())
+      buffer.setHighlightBackend(hbMatter)
+      check buffer.effectiveHighlightBackend == hbBuiltin
+      check buffer.saveFile(path).isOk
+      check buffer.language == langNone
+      check buffer.highlightNeedsUpdate
+      discard buffer.updateHighlight()
+      check buffer.effectiveHighlightBackend == hbMatter
+      check buffer.incrementalHighlight.backend == hbMatter
+
+    test "raw buffers do not use a matching dynamic grammar":
+      var buffer = newTextBuffer()
+      buffer.setMatterGrammarSet(newTestMatterGrammarSet())
+      buffer.setHighlightBackend(hbMatter)
+      check buffer.loadFileWithContent("raw.hcl", "\xff\xfe\x41").isOk
+      check not buffer.allowsTextTransforms
+      check buffer.effectiveHighlightBackend == hbBuiltin
+      check buffer.incrementalHighlight.isNil
+
+    test "dynamic Markdown file types retain Matter fence state":
+      var buffer = newTextBuffer()
+      buffer.setMatterGrammarSet(newTestMatterGrammarSet())
+      buffer.setHighlightBackend(hbMatter)
+      check buffer.loadFileWithContent(
+        "readme.mdx", "```nim\nproc x() = discard\n```\n"
+      ).isOk
+      check buffer.language == langNone
+      check buffer.effectiveHighlightBackend == hbMatter
+      check buffer.isCodeBlockLine(0)
+      check buffer.isCodeBlockLine(1)
+      check buffer.isCodeBlockLine(2)
 
     test "Markdown fences use Matter state":
       var buffer = newTextBuffer("```nim\nproc x() = discard\n```\n")

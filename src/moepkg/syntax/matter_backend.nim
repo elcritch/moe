@@ -1,11 +1,12 @@
 ## Optional Matter TextMate adapter. Moe does not bundle grammars: callers add
 ## grammar source explicitly, either through the public editor/buffer API or
-## through files named by the user's configuration.
+## through files named by the user's configuration. Matter can select grammars
+## by their TextMate file types without adding them to `SourceLanguage`.
 
 when not (defined(moe.matter) or defined(features.moe.matter)):
   {.error: "moepkg/syntax/matter_backend requires the Matter feature".}
 
-import std/[sets, strutils, tables]
+import std/[os, sets, strutils, tables]
 import matter/[engine, grammarpackages, rawgrammar]
 
 import tokenizer
@@ -46,7 +47,10 @@ type
     content*: string
     path*: string
     language*: SourceLanguage
-      ## `langNone` lets Moe infer the language from the grammar's scope name.
+      ## An optional compatibility binding for Moe's built-in language enum.
+    fileTypes*: seq[string]
+      ## Additional file names or suffixes selecting this grammar. These are
+      ## additive to the TextMate grammar's own `fileTypes` metadata.
 
   MatterGrammarSet* = ref object
     ## An immutable-by-convention collection shared by an editor's buffers.
@@ -55,8 +59,9 @@ type
     registry: Registry
     scopes: HashSet[string]
     languageScopes: Table[SourceLanguage, string]
-    grammarCache: Table[SourceLanguage, Grammar]
-    unavailableLanguages: HashSet[SourceLanguage]
+    fileTypeScopes: Table[string, string]
+    grammarCache: Table[string, Grammar]
+    unavailableScopes: HashSet[string]
 
   MatterLineState* = object
     ## Completed state entering the next line. A failure is sticky so a slow
@@ -132,14 +137,54 @@ proc scopeFor(language: SourceLanguage): string =
     if mapping.modeName.toLowerAscii == mode:
       return mapping.scopeName
 
+func normalizeFileType(fileType: string): string =
+  result = fileType.toLowerAscii
+  var first = 0
+  while first < result.len and result[first] == '.':
+    inc first
+  if first == result.len:
+    result.setLen(0)
+  elif first > 0:
+    result = result[first .. ^1]
+
+proc scopeForFilename(grammars: MatterGrammarSet, filename: string): string =
+  if grammars.isNil or filename.len == 0:
+    return
+  let basename = filename.extractFilename.toLowerAscii
+
+  # A full basename is more specific than a suffix. This covers conventional
+  # names such as Dockerfile while keeping suffix matching for `foo.d.ts`.
+  if grammars.fileTypeScopes.hasKey(basename):
+    return grammars.fileTypeScopes[basename]
+
+  var longestMatch = -1
+  for fileType, scope in grammars.fileTypeScopes.pairs:
+    if basename.endsWith('.' & fileType) and fileType.len > longestMatch:
+      result = scope
+      longestMatch = fileType.len
+
+proc selectedScope(
+    grammars: MatterGrammarSet, language: SourceLanguage, filename: string
+): string =
+  if grammars.isNil or language in {langDiff, langLog}:
+    return
+  if grammars.languageScopes.hasKey(language):
+    return grammars.languageScopes[language]
+  if language != langNone:
+    let inferred = scopeFor(language)
+    if inferred in grammars.scopes:
+      return inferred
+  grammars.scopeForFilename(filename)
+
 proc newMatterGrammarSet*(): MatterGrammarSet =
   ## Create an empty set. An empty set cannot select Matter highlighting.
   MatterGrammarSet(
     registry: newRegistry(),
     scopes: initHashSet[string](),
     languageScopes: initTable[SourceLanguage, string](),
-    grammarCache: initTable[SourceLanguage, Grammar](),
-    unavailableLanguages: initHashSet[SourceLanguage](),
+    fileTypeScopes: initTable[string, string](),
+    grammarCache: initTable[string, Grammar](),
+    unavailableScopes: initHashSet[string](),
   )
 
 proc newMatterGrammarSet*(sources: openArray[MatterGrammarSource]): MatterGrammarSet =
@@ -161,36 +206,46 @@ proc newMatterGrammarSet*(sources: openArray[MatterGrammarSource]): MatterGramma
     result.scopes.incl(raw.scopeName)
     result.sources.add(
       MatterGrammarSource(
-        content: source.content, path: path, language: source.language
+        content: source.content,
+        path: path,
+        language: source.language,
+        fileTypes: source.fileTypes,
       )
     )
     if source.language != langNone:
       result.languageScopes[source.language] = raw.scopeName
 
-proc grammarFor(grammars: MatterGrammarSet, language: SourceLanguage): Grammar =
-  if grammars.isNil or language in {langNone, langDiff, langLog} or
-      language in grammars.unavailableLanguages:
+    for fileType in raw.fileTypes & source.fileTypes:
+      let normalized = fileType.normalizeFileType
+      # Earlier sources win collisions, making caller order deterministic and
+      # preventing a support grammar from displacing a primary grammar later.
+      if normalized.len > 0 and not result.fileTypeScopes.hasKey(normalized):
+        result.fileTypeScopes[normalized] = raw.scopeName
+
+proc grammarForScope(grammars: MatterGrammarSet, scope: string): Grammar =
+  if grammars.isNil or scope.len == 0 or scope notin grammars.scopes or
+      scope in grammars.unavailableScopes:
     return nil
-  let scope =
-    if grammars.languageScopes.hasKey(language):
-      grammars.languageScopes[language]
-    else:
-      scopeFor(language)
-  if scope.len == 0 or scope notin grammars.scopes:
-    return nil
-  if grammars.grammarCache.hasKey(language):
-    return grammars.grammarCache[language]
+  if grammars.grammarCache.hasKey(scope):
+    return grammars.grammarCache[scope]
   try:
     result = grammars.registry.loadGrammar(scope)
-    grammars.grammarCache[language] = result
+    grammars.grammarCache[scope] = result
   except CatchableError as error:
-    grammars.unavailableLanguages.incl(language)
+    grammars.unavailableScopes.incl(scope)
     logWarn("highlight", "Matter grammar " & scope & " is unavailable: " & error.msg)
 
-proc matterSupports*(grammars: MatterGrammarSet, language: SourceLanguage): bool =
+proc grammarFor(
+    grammars: MatterGrammarSet, language: SourceLanguage, filename = ""
+): Grammar =
+  grammars.grammarForScope(grammars.selectedScope(language, filename))
+
+proc matterSupports*(
+    grammars: MatterGrammarSet, language: SourceLanguage, filename = ""
+): bool =
   ## Matter is available only after this set received a valid root grammar.
   ## Diff and Log deliberately retain Moe's specialised built-in highlighters.
-  not grammars.grammarFor(language).isNil
+  not grammars.grammarFor(language, filename).isNil
 
 proc matterSupports*(language: SourceLanguage): bool =
   ## The compatibility query has no implicit global grammar registry. Callers
@@ -225,11 +280,35 @@ proc withMatterGrammar*(
       TextMateGrammarError, "TextMate grammar could not be compiled for " & $language
     )
 
+proc withMatterGrammar*(
+    grammars: MatterGrammarSet, source: MatterGrammarSource
+): MatterGrammarSet =
+  ## Return a grammar set with one dynamically selected TextMate grammar.
+  ## The grammar's own `fileTypes` and `source.fileTypes` aliases select it.
+  ## Its associations take precedence over the existing set, and another
+  ## grammar with the same scope is replaced.
+  let
+    sourcePath = if source.path.len > 0: source.path else: "grammar.tmLanguage.json"
+    raw = parseRawGrammar(source.content, sourcePath)
+  var sources = @[source]
+  if not grammars.isNil:
+    for existing in grammars.sources:
+      let existingRaw = parseRawGrammar(existing.content, existing.path)
+      if existingRaw.scopeName != raw.scopeName:
+        sources.add(existing)
+  result = newMatterGrammarSet(sources)
+
+  if result.grammarForScope(raw.scopeName).isNil:
+    raise newException(
+      TextMateGrammarError,
+      "TextMate grammar could not be compiled for " & raw.scopeName,
+    )
+
 proc initialMatterState*(
-    grammars: MatterGrammarSet, language: SourceLanguage
+    grammars: MatterGrammarSet, language: SourceLanguage, filename = ""
 ): MatterLineState =
   ## Create a fresh line state for a grammar set/language pair.
-  MatterLineState(grammar: grammars.grammarFor(language))
+  MatterLineState(grammar: grammars.grammarFor(language, filename))
 
 proc sanitizeInvalidUtf8(line: string): string =
   ## Replace only malformed high bytes with spaces, preserving byte positions
@@ -248,6 +327,7 @@ proc tokenizeMatterLine*(
     previous = MatterLineState(),
     timeLimitMs = MatterTimeLimitMs,
     grammars: MatterGrammarSet = nil,
+    filename = "",
 ): tuple[spans: seq[MatterSpan], nextState: MatterLineState] =
   ## Tokenize one line with a soft deadline (0 disables it). Failed/partial
   ## parses return no spans and no partial stack. Subsequent lines stay plain
@@ -257,7 +337,7 @@ proc tokenizeMatterLine*(
     return
   let grammar =
     if previous.grammar.isNil:
-      grammars.grammarFor(language)
+      grammars.grammarFor(language, filename)
     else:
       previous.grammar
   if grammar.isNil:

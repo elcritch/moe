@@ -2,7 +2,8 @@ when defined(moe.matter) or defined(features.moe.matter):
   import ../src/moepkg/syntax/[matter_backend, tokenizer]
 
   const
-    NimMatterGrammar* = """
+    NimMatterGrammar* =
+      """
 {
   "name": "Nim test grammar",
   "scopeName": "source.nim",
@@ -24,7 +25,8 @@ when defined(moe.matter) or defined(features.moe.matter):
 }
 """
 
-    JsoncMatterGrammar* = """
+    JsoncMatterGrammar* =
+      """
 {
   "name": "JSONC test grammar",
   "scopeName": "source.json.comments",
@@ -35,7 +37,8 @@ when defined(moe.matter) or defined(features.moe.matter):
 }
 """
 
-    MarkdownMatterGrammar* = """
+    MarkdownMatterGrammar* =
+      """
 {
   "name": "Markdown test grammar",
   "scopeName": "text.html.markdown",
@@ -45,6 +48,31 @@ when defined(moe.matter) or defined(features.moe.matter):
       "end": "^\\1\\s*$",
       "name": "markup.fenced_code.block.markdown"
     }
+  ]
+}
+"""
+
+    TerraformMatterGrammar* =
+      """
+{
+  "name": "Terraform test grammar",
+  "scopeName": "source.hcl.terraform",
+  "fileTypes": ["tf", "tfvars"],
+  "patterns": [
+    {"match": "\\b(true|false|null)\\b", "name": "constant.language.hcl"},
+    {"begin": "\"", "end": "\"", "name": "string.quoted.double.hcl"}
+  ]
+}
+"""
+
+    AlternateHclMatterGrammar* =
+      """
+{
+  "name": "Alternate HCL test grammar",
+  "scopeName": "source.hcl.alternate",
+  "fileTypes": ["hcl"],
+  "patterns": [
+    {"match": "\\b(true|false|null)\\b", "name": "keyword.control.hcl"}
   ]
 }
 """
@@ -64,6 +92,12 @@ when defined(moe.matter) or defined(features.moe.matter):
           content: MarkdownMatterGrammar,
           path: "markdown.tmLanguage.json",
           language: langMarkdown,
+          fileTypes: @["mdx"],
+        ),
+        MatterGrammarSource(
+          content: TerraformMatterGrammar,
+          path: "terraform.tmLanguage.json",
+          fileTypes: @["hcl"],
         ),
       ]
     )

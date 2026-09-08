@@ -85,6 +85,17 @@ proc setMatterGrammar*(
       TextMateGrammarError, "Matter support is not enabled at compile time"
     )
 
+when defined(moe.matter) or defined(features.moe.matter):
+  proc setMatterGrammar*(e: Editor, source: MatterGrammarSource) =
+    ## Add a dynamically selected grammar for all current and future buffers.
+    ## Invalid grammar input raises a catchable error without changing the editor.
+    let grammars = e.config.highlight.matterGrammarSet.withMatterGrammar(source)
+    e.config.highlight.matterGrammarSet = grammars
+    e.config.highlight.backend = hbMatter
+    for buffer in e.buffers:
+      buffer.setMatterGrammarSet(grammars)
+      buffer.setHighlightBackend(hbMatter)
+
 proc applyConfigSettings*(e: Editor, newConfig: EditorConfig) =
   ## Apply configuration settings to the editor.
   ## Display/edit flags are pull-read from `e.config`, so the ref swap at the

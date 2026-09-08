@@ -225,10 +225,13 @@ proc effectiveHighlightBackend*(
 
 when defined(moe.matter) or defined(features.moe.matter):
   proc effectiveHighlightBackend*(
-      backend: HighlightBackend, language: SourceLanguage, grammars: MatterGrammarSet
+      backend: HighlightBackend,
+      language: SourceLanguage,
+      grammars: MatterGrammarSet,
+      filename = "",
   ): HighlightBackend =
     ## Resolve backend availability after an explicit grammar opt-in.
-    if backend == hbMatter and grammars.matterSupports(language):
+    if backend == hbMatter and grammars.matterSupports(language, filename):
       return hbMatter
     hbBuiltin
 
@@ -240,13 +243,16 @@ proc newTokenizerState*(
 
 when defined(moe.matter) or defined(features.moe.matter):
   proc newTokenizerState*(
-      backend: HighlightBackend, language: SourceLanguage, grammars: MatterGrammarSet
+      backend: HighlightBackend,
+      language: SourceLanguage,
+      grammars: MatterGrammarSet,
+      filename = "",
   ): TokenizerState =
     ## Fresh state for the selected engine and explicit grammar collection.
-    let effective = effectiveHighlightBackend(backend, language, grammars)
+    let effective = effectiveHighlightBackend(backend, language, grammars, filename)
     result.backend = effective
     if effective == hbMatter:
-      result.matterState = initialMatterState(grammars, language)
+      result.matterState = initialMatterState(grammars, language, filename)
 
 proc freshTokenizerState(
     incrHighlight: IncrementalHighlight, language: SourceLanguage
@@ -472,16 +478,17 @@ proc overwrite(s, t: ColorSegment): seq[ColorSegment] =
     return @[s]
 
   if t.contains(s):
-    return @[
-      ColorSegment(
-        firstRow: s.firstRow,
-        firstColumn: s.firstColumn,
-        lastRow: s.lastRow,
-        lastColumn: s.lastColumn,
-        color: t.color,
-        style: t.style,
-      )
-    ]
+    return
+      @[
+        ColorSegment(
+          firstRow: s.firstRow,
+          firstColumn: s.firstColumn,
+          lastRow: s.lastRow,
+          lastColumn: s.lastColumn,
+          color: t.color,
+          style: t.style,
+        )
+      ]
 
   if s.contains(t):
     if (s.firstRow, s.firstColumn) < (t.firstRow, t.firstColumn):
@@ -1174,8 +1181,7 @@ when defined(moe.matter) or defined(features.moe.matter):
         row = startLine + offset
         parsed = tokenizeMatterLine(line, language, state)
         style =
-          if language == langMarkdown and
-              (state.isMatterCodeBlock or parsed.nextState.isMatterCodeBlock):
+          if state.isMatterCodeBlock or parsed.nextState.isMatterCodeBlock:
             Style(bg: getThemeStyle(EditorColorPairIndex.markdownCodeBlock).bg)
           else:
             defaultStyle
@@ -1564,7 +1570,8 @@ proc initHighlightIncremental*(
   ## Parse lines[startLine..endLine] and produce color segments with matching
   ## row numbers. `lines` must contain entries at indices startLine..endLine.
   ## `maxLineLen` caps per-line tokenization (see `buildBufferStrCapped`).
-  if language == SourceLanguage.langNone or lines.len == 0:
+  if lines.len == 0 or
+      (language == SourceLanguage.langNone and initialState.backend != hbMatter):
     return (segments: @[], lineStates: @[])
   let (bufferStr, tails) = buildBufferStrCapped(lines, startLine, endLine, maxLineLen)
   initHighlightIncrementalFromStr(

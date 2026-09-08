@@ -4,6 +4,7 @@ import pkg/results
 import ../src/moepkg/[buffer, config, editor, highlight]
 
 when defined(moe.matter) or defined(features.moe.matter):
+  import ../src/moepkg/syntax/matter_backend
   import matter_test_grammars
 
 suite "Programmatic highlighter selection":
@@ -76,6 +77,33 @@ suite "Programmatic highlighter selection":
     let editor = newEditor(config)
     editor.activeBuffer().language = langNim
     check editor.activeBuffer().effectiveHighlightBackend == hbBuiltin
+
+  when defined(moe.matter) or defined(features.moe.matter):
+    test "editor setter registers a dynamic grammar for current and future buffers":
+      let
+        config = newEditorConfig()
+        editor = newEditor(config)
+        directory = createTempDir("moe_dynamic_highlighter_api_", "")
+      defer:
+        removeDir(directory)
+
+      let existing = editor.loadOrCreateBuffer(directory / "existing.hcl")
+      require existing.isOk
+      check existing.get.effectiveHighlightBackend == hbBuiltin
+
+      editor.setMatterGrammar(
+        MatterGrammarSource(
+          content: TerraformMatterGrammar,
+          path: "terraform.tmLanguage.json",
+          fileTypes: @["hcl"],
+        )
+      )
+      check existing.get.effectiveHighlightBackend == hbMatter
+
+      let future = editor.loadOrCreateBuffer(directory / "future.hcl")
+      require future.isOk
+      check future.get.language == langNone
+      check future.get.effectiveHighlightBackend == hbMatter
 
   test "invalid or unavailable grammar API does not change backend":
     let buffer = newTextBuffer("let x = true")

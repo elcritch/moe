@@ -172,6 +172,26 @@ editor.setMatterGrammar(langNim, grammar, "Nim.tmLanguage.json")
 buffer.setMatterGrammar(langNim, grammar, "Nim.tmLanguage.json")
 ```
 
+Grammars for languages outside Moe's `SourceLanguage` enum are selected from
+their TextMate `fileTypes` metadata. Hosts can add aliases that are absent from
+the grammar itself; these associations apply to current and future buffers:
+
+```nim
+editor.setMatterGrammar(
+  MatterGrammarSource(
+    content: readFile("Terraform.tmLanguage.json"),
+    path: "Terraform.tmLanguage.json",
+    fileTypes: @["hcl"],
+  )
+)
+```
+
+File types match an exact basename first, then the longest dot-delimited suffix.
+Programmatic registrations take precedence over existing filename associations.
+The built-in language enum remains the source of editor features such as LSP
+and indentation; a dynamically highlighted buffer may therefore keep
+`language == langNone`.
+
 For standalone Moe, place JSON `.tmLanguage.json` or XML plist `.tmLanguage`
 files inside Moe's configuration directory (normally `~/.config/moe`) and name
 them in `moerc.toml`. Relative subdirectories are allowed; absolute paths and
@@ -183,10 +203,10 @@ backend = "matter"
 matterGrammarFiles = ["grammars/Nim.tmLanguage.json"]
 ```
 
-Config-loaded roots are matched to Moe languages by their declared TextMate
-`scopeName`; additional listed grammars may satisfy external includes. The API
-overload associates the supplied root with its `SourceLanguage` explicitly, so
-custom scope names are supported there.
+Config-loaded roots are matched by their declared TextMate `fileTypes`, or to
+known Moe languages by `scopeName`; additional listed grammars may satisfy
+external includes. The enum-based API overload associates the supplied root
+with its `SourceLanguage` explicitly, so custom scope names are supported there.
 
 The existing `[Standard] syntax` toggle enables/disables rendering for either
 backend. Reloading config switches existing buffers and invalidates their syntax
