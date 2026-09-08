@@ -44,6 +44,14 @@ when defined(moe.matter) or defined(features.moe.matter):
   "scopeName": "text.html.markdown",
   "patterns": [
     {
+      "match": "^(#)\\s+(.+)$",
+      "name": "markup.heading.markdown",
+      "captures": {
+        "1": {"name": "punctuation.definition.heading.markdown"},
+        "2": {"name": "entity.name.section.markdown"}
+      }
+    },
+    {
       "begin": "^(```|~~~).*$",
       "end": "^\\1\\s*$",
       "name": "markup.fenced_code.block.markdown"

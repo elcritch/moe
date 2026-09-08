@@ -114,6 +114,8 @@ proc category(scopes: openArray[string]): MatterColorCategory =
       return mccProperty
     if scope.scopeMatches("entity.name.type") or scope.scopeMatches("support.type"):
       return mccType
+    if scope.scopeMatches("entity.name.section") or scope.scopeMatches("markup.heading"):
+      return mccBuiltin
     if scope.scopeMatches("keyword.operator"):
       return mccOperator
     if scope.scopeMatches("meta.preprocessor") or

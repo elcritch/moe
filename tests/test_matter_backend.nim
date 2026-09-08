@@ -146,6 +146,15 @@ when defined(moe.matter) or defined(features.moe.matter):
       let closing = tokenizeMatterLine("~~~", langMarkdown, content.nextState, 0)
       check not isMatterCodeBlock(closing.nextState)
 
+    test "Markdown headings use a structural color category":
+      let parsed = tokenizeMatterLine(
+        "# Matter heading",
+        langMarkdown,
+        timeLimitMs = 0,
+        grammars = newTestMatterGrammarSet(),
+      )
+      check parsed.spans.anyIt(it.category == mccBuiltin)
+
     test "malformed Unicode preserves input bytes and span bounds":
       var samples = @["\xed\xa0\x80", "\xf4\x90\x80\x80", "\xc0\xaf", "\xe2\x82"]
       for value in 128 .. 255:
