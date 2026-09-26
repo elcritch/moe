@@ -34,6 +34,7 @@ import
 
 export config.EditorConfig, config.newEditorConfig
 export editor.Editor, editor.newEditor
+export editor.HostResultFilter, editor.HandlerResult, editor.HandlerResultKind
 export editor_frame.tick
 export
   editor_display.FrontendStatus, editor_display.ActiveGitStatus,

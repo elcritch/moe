@@ -24,6 +24,7 @@ import std/[options, tables]
 
 import ../[types, motion, commands, command_registry, modes, quick_run_utils, job_lanes]
 import ../key_bindings except Command
+import ../command_handlers/handler_result as handler_result_types
 import ../command_handlers/handler_types
 import ../buffer/core as buffer_core
 import ../command_line/types as command_line_types
@@ -37,6 +38,7 @@ export
   background_process_types, persist_types, virtual_text_types, command_line_types,
   command_config_types, key_router_types, config_types, buffer_core,
   window_manager_types, lsp_integration_types
+export handler_result_types.HandlerResult, handler_result_types.HandlerResultKind
 
 type
   ScreenSize* = object
@@ -45,6 +47,11 @@ type
 
   HostCommandFilter* = proc(e: Editor, command: ParsedCommand): bool {.closure.}
     ## Return true to let the host handle a parsed `:` command instead of Moe.
+
+  HostResultFilter* = proc(
+    e: Editor, r: handler_result_types.HandlerResult
+  ): bool {.closure.}
+    ## Return true to let the host handle a dispatched result instead of Moe.
 
   Editor* = ref object
     state*: EditorState
@@ -91,6 +98,7 @@ type
       ## nothing, keeping buffers usable outside a full editor.
     xHostPopupMenus: bool
     hostCommandFilter*: HostCommandFilter
+    hostResultFilter*: HostResultFilter
     xHostCommandRequests: seq[ParsedCommand]
     when not defined(moe.embedded):
       terminalStates*: Table[BufferId, TerminalState]
@@ -304,6 +312,12 @@ proc interceptHostCommand*(e: Editor, command: ParsedCommand): bool =
   if not e.hostCommandFilter.isNil and e.hostCommandFilter(e, command):
     e.xHostCommandRequests.add(command)
     return true
+
+proc interceptHostResult*(
+    e: Editor, r: handler_result_types.HandlerResult
+): bool =
+  ## Let the host take over a dispatched result before Moe applies its effects.
+  not e.hostResultFilter.isNil and e.hostResultFilter(e, r)
 
 proc takeHostCommandRequest*(e: Editor): Option[ParsedCommand] =
   ## Take the oldest host-handled command, or none when the queue is empty.

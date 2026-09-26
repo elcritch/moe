@@ -146,6 +146,9 @@ proc processResult*(e: Editor, r: HandlerResult, activeBuffer: TextBuffer): bool
   ## Apply the editor-level side effects implied by `r`. Returns true to
   ## continue the main loop, false to quit.
 
+  if e.interceptHostResult(r):
+    return true
+
   # Process the result
   case r.kind
   of hrQuit:
