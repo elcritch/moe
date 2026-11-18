@@ -84,8 +84,6 @@ const NormalBindings: seq[tuple[key, cmd: string]] = @[
   ("B", "wide-word-backward"),
   ("E", "wide-word-end"),
   ("g E", "wide-word-end-backward"),
-  ("S-Right", "word-forward"),
-  ("S-Left", "word-backward"),
   ("C-Right", "wide-word-forward"),
   ("C-Left", "wide-word-backward"),
   # Paragraph motion

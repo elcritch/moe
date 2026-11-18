@@ -47,6 +47,7 @@ import
   cursor_util,
   background_process,
   key_router,
+  pending_input,
   macro_recording,
   visible_rows,
   viewer_mode,
@@ -1273,6 +1274,20 @@ proc dispatchFrontLayers(e: Editor, keyCombo: KeyCombo): Option[ReplayOutcome] =
   if handled.isNone and e.state.mode == EditorMode.RecentFile:
     # Handle Recent File mode input (after Ctrl-W window commands)
     handled = some(e.handleRecentFileModeKeyCombo(keyCombo))
+  # Runtime mappings have already had a chance to consume this key.
+  if handled.isNone and e.state.mode.isFileEditMode and keyCombo.isSpecial and
+      keyCombo.modifiers == {kmShift} and
+      keyCombo.special in {skLeft, skRight, skUp, skDown} and
+      not e.readsKeyUnmapped(keyCombo):
+    if not e.state.mode.isVisualAllMode:
+      e.finalizeInsertSessionForBufferSwitch(e.activeBuffer)
+      e.state.pendingInput.cancelAll(e.keyRouter.registry)
+      e.state.enterVisual(vskChar, e.cursor, e.cursor)
+    let arrow = KeyCombo(isSpecial: true, special: keyCombo.special)
+    let moved = e.handlerManager.handleVisualMode(e, arrow)
+    let outcome = processReplayedResult(e, moved, e.activeBuffer)
+    e.enforceModePolicy()
+    return some(outcome)
   if handled.isNone:
     return none(ReplayOutcome)
   if not handled.get:

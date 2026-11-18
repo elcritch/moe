@@ -20,6 +20,7 @@
 import std/[options, unittest]
 
 import ../src/moepkg/[buffer, config, editor, modes, types, handler, key_bindings]
+import ../src/moepkg/celina_backend as celina
 import visual_test_helper
 
 proc createSelectionEditor(text: string): Editor =
@@ -27,6 +28,34 @@ proc createSelectionEditor(text: string): Editor =
   discard result.activeBuffer.insertText(BufferPosition(line: 0, column: 0), text)
 
 suite "editor selection API":
+  test "shifted terminal arrows start and extend a character selection":
+    let e = createSelectionEditor("abc\ndef\nghi")
+    for arrow in [
+      celina.KeyCode.ArrowRight, celina.KeyCode.ArrowDown, celina.KeyCode.ArrowUp,
+      celina.KeyCode.ArrowLeft,
+    ]:
+      require e.handleEvent(
+        celina.Event(
+          kind: celina.EventKind.Key,
+          key: celina.KeyEvent(code: arrow, modifiers: {celina.KeyModifier.Shift}),
+        )
+      )
+      if arrow == celina.KeyCode.ArrowDown:
+        check e.selectedText() == "abc\nde"
+    check e.state.mode == EditorMode.Visual
+    check e.selectedText() == "a"
+
+  test "shifted arrows finish the insert transaction before selecting":
+    let e = createSelectionEditor("abc")
+    for key in ["i", "x", "S-Right"]:
+      require e.handleKeyCombo(parseKeyCombo(key).get)
+    check e.state.mode == EditorMode.Visual
+    check e.selectedText() == "ab"
+    check not e.activeBuffer.inTransaction
+    for key in ["Escape", "u"]:
+      require e.handleKeyCombo(parseKeyCombo(key).get)
+    check e.activeBuffer.getLine(0) == "abc"
+
   test "inactive selection reports none and empty text":
     let e = createSelectionEditor("alpha")
 
